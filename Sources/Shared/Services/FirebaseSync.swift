@@ -60,6 +60,7 @@ import PlateCore
                     Task { @MainActor [weak self] in
                         guard let self, self.userID == uid else { return }
                         self.store.replaceFromCloud(meals); self.status = status; self.error = nil
+                        await PhotoStore.shared.reclaimUploadedCopies(meals: meals, sync: self)
                     }
                 } catch { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = "A meal could not be read: \(message)" } }
             }
@@ -113,7 +114,7 @@ import PlateCore
     }
     func photoData(path: String) async throws -> Data {
         if path.hasPrefix("firestore://") {
-            let document = try await Firestore.firestore().document(String(path.dropFirst("firestore://".count))).getDocument()
+            let document = try await Firestore.firestore().document(String(path.dropFirst("firestore://".count))).getDocument(source: .server)
             guard let bytes = document.data()?["bytes"] as? Data else { throw CocoaError(.fileNoSuchFile) }
             return bytes
         }
@@ -172,7 +173,7 @@ import PlateCore
         guard let uid = userID else { throw CocoaError(.userCancelled) }
         try await Firestore.firestore().waitForPendingWrites()
         let document = try await Firestore.firestore().collection("users").document(uid).collection("meals").document(mealID).getDocument(source: .server)
-        guard document.exists else { return ("", "") }
+        guard document.exists else { throw CocoaError(.fileNoSuchFile) }
         if !UserDefaults.standard.bool(forKey: "useFirebaseStorage") {
             guard jpeg.count <= 750 * 1024, thumbnail.count <= 100 * 1024 else { throw CocoaError(.fileWriteOutOfSpace) }
             let root = Firestore.firestore().collection("users").document(uid).collection("photos")

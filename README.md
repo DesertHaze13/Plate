@@ -8,12 +8,12 @@ Plate combines photo capture, nutrition-label OCR, editable meal reviews, and da
 
 - Food photos, nutrition labels, barcode matching, image imports, and manual entry.
 - On-device Vision OCR, English and Indonesian label parsing, serving-size calculations, and optional AI recognition.
-- Review and edit every food item before logging it.
+- Review and edit every food item before logging it; correct individual foods with AI descriptions and optional reference photos, including meals already logged.
 - Daily calorie, protein, carbohydrate, and fat targets, with optional training-day targets.
-- Meal history, saved foods, repeat meals, weight tracking, and progress charts.
+- Meal history with daily calorie comparisons, saved foods, repeat meals, weight tracking, and progress charts.
 - Google sign-in and private Firestore synchronization, with offline caches and a photo-upload outbox.
 - Optional Apple Health integration, widgets, capture control, Siri shortcuts, and a Mac menu-bar glance.
-- Light/dark appearance, reduced-motion support, and accessible control descriptions.
+- Separate System/Light/Dark appearance settings, a floating capture dock, prominent calorie/macro over-target warnings, reduced-motion support, and accessible control descriptions.
 
 ## Requirements
 
@@ -65,6 +65,6 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 8.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 19.
 
 See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.

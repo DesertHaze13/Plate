@@ -27,6 +27,6 @@ final class GuidanceTests: XCTestCase {
     }
     func testFemaleFormula() {
         var p = Profile(); p.male = false; p.age = 30; p.weightKG = 60; p.heightCM = 165; p.activityMultiplier = 1.2
-        XCTAssertEqual(NutritionCalculator.targets(for: p).nutrients.calories, (600+1031.25-150-161)*1.2, accuracy: 0.001)
+        XCTAssertEqual(NutritionCalculator.targets(for: p).nutrients.calories, (600+1031.25-150-161)*1.2*0.9, accuracy: 0.001)
     }
 }

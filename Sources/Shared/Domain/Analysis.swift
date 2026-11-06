@@ -68,3 +68,68 @@ public enum HistoryMath {
         return count
     }
 }
+
+/// Typical caffeine per serving, used when a food has no caffeine value of its own.
+public enum CaffeineEstimate {
+    private static let table: [(words: [String], mg: Double)] = [
+        (["decaf", "decaffeinated"], 3),
+        (["matcha"], 70),
+        (["cold brew"], 200),
+        (["doppio", "double espresso", "double shot"], 128),
+        (["espresso", "ristretto"], 64),
+        (["coffee", "kopi", "latte", "cappuccino", "flat white", "americano", "mocha", "macchiato", "cortado", "affogato", "kape"], 95),
+        (["monster"], 160),
+        (["red bull", "energy drink", "kratingdaeng"], 80),
+        (["tea", "teh", "chai", "oolong"], 47),
+        (["cola", "coke", "pepsi"], 34)
+    ]
+    private static let coffeeWords = ["coffee", "kopi", "latte", "cappuccino", "flat white", "americano", "mocha", "macchiato", "cortado", "affogato", "kape", "espresso", "ristretto", "doppio", "cold brew", "decaf"]
+    private static func normalized(_ name: String) -> String {
+        " " + String(name.lowercased().map { $0.isLetter ? $0 : " " }).split(separator: " ").joined(separator: " ") + " "
+    }
+    /// Milligrams per serving, or nil when the name doesn't look like a caffeinated drink.
+    public static func perServing(name: String) -> Double? {
+        let text = normalized(name)
+        return table.first { entry in entry.words.contains { word in text.contains(" \(word) ") } }?.mg
+    }
+    public static func isCoffee(_ name: String) -> Bool {
+        let text = normalized(name)
+        return coffeeWords.contains { word in text.contains(" \(word) ") }
+    }
+    /// The item's own caffeine when entered, otherwise the typical amount for its name.
+    public static func milligrams(for item: FoodItem) -> Double {
+        item.nutrients.caffeine > 0 ? item.total.caffeine : (perServing(name: item.name) ?? 0) * item.quantity
+    }
+}
+
+/// Applies a reviewed AI proposal without touching unrelated foods or resurrecting a removed item.
+public enum FoodReview {
+    public static func applying(_ proposal: [FoodItem], replacing id: String?, to foods: [FoodItem]) -> [FoodItem] {
+        guard !proposal.isEmpty else { return foods }
+        guard let id else { return foods + proposal }
+        guard let index = foods.firstIndex(where: { $0.id == id }) else { return foods }
+        var result = foods; result.replaceSubrange(index...index, with: proposal)
+        return result
+    }
+}
+
+/// Budget overages are independent: a macro can exceed its target while calories are still below theirs.
+public struct NutritionOverage: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let unit: String
+    public let consumed: Double
+    public let target: Double
+    public var excess: Double { consumed - target }
+    public static func evaluate(eaten: Nutrients, target: Nutrients) -> [NutritionOverage] {
+        let fields: [(String, String, String, KeyPath<Nutrients, Double>)] = [
+            ("calories", "Calories", "kcal", \.calories), ("protein", "Protein", "g", \.protein),
+            ("carbs", "Carbs", "g", \.carbs), ("fat", "Fat", "g", \.fat)
+        ]
+        return fields.compactMap { id, name, unit, path in
+            let value = eaten[keyPath: path], goal = target[keyPath: path]
+            guard value.isFinite, goal.isFinite, goal > 0, value > goal else { return nil }
+            return NutritionOverage(id: id, name: name, unit: unit, consumed: value, target: goal)
+        }
+    }
+}
