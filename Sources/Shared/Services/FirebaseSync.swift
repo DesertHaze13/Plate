@@ -25,7 +25,6 @@ import PlateCore
     private var accountListeners: [ListenerRegistration] = []
     private(set) var signingIn = false
     private let store: MealStore
-    private static var firestoreConfigured = false
     init(store: MealStore) {
         self.store = store
         configured = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil
@@ -35,15 +34,9 @@ import PlateCore
             FirebaseApp.configure()
         }
         if let app = FirebaseApp.app() { PlateAppCheckFactory.prepareEnrollment(app: app) }
-        // Firestore throws (crashing the app) if settings change after it has started,
-        // so apply them only once per process, however many times this is constructed.
-        if !Self.firestoreConfigured {
-            Self.firestoreConfigured = true
-            let db = Firestore.firestore()
-            let settings = db.settings
-            settings.cacheSettings = PersistentCacheSettings()
-            db.settings = settings
-        }
+        // Firebase's Apple SDK enables persistent caching by default. Never mutate
+        // global Firestore settings here: another window or auth callback may have
+        // already started the shared instance, in which case setSettings aborts.
         status = "Sign in to sync"
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             let uid = user?.uid
@@ -150,13 +143,17 @@ import PlateCore
     }
 
     func signInWithGoogle() async {
+        guard !signingIn else { return }
         guard configured, let clientID = FirebaseApp.app()?.options.clientID else { error = "Google sign-in configuration is missing. Download the updated Firebase configuration after enabling Google."; return }
+        let schemes = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []).flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        if let message = GoogleLoginConfiguration.validationError(clientID: clientID, callbackSchemes: schemes) { error = message; return }
+        error = nil
         signingIn = true; defer { signingIn = false }
         do {
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
             #if os(iOS)
-            guard var presenter = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController }).first else { throw CocoaError(.featureUnsupported) }
-            while let next = presenter.presentedViewController { presenter = next }
+            guard var presenter = UIApplication.shared.connectedScenes.filter { $0.activationState == .foregroundActive }.compactMap({ ($0 as? UIWindowScene)?.keyWindow?.rootViewController }).first else { throw CocoaError(.featureUnsupported) }
+            while let next = presenter.presentedViewController, !next.isBeingDismissed { presenter = next }
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
             #else
             guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first else { throw CocoaError(.featureUnsupported) }
@@ -218,3 +215,20 @@ import PlateCore
     func uploadPhoto(mealID: String, jpeg: Data, thumbnail: Data) async throws -> (String, String) { throw CocoaError(.fileWriteNoPermission) }
 }
 #endif
+
+
+/// Validate before entering Google's Objective-C API, whose configuration errors
+/// raise exceptions rather than Swift errors and cannot be caught by do/catch.
+enum GoogleLoginConfiguration {
+    static func validationError(clientID: String, callbackSchemes: [String]) -> String? {
+        let client = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !client.isEmpty, client.hasSuffix(".apps.googleusercontent.com"), !client.hasPrefix(".") else {
+            return "Google sign-in is not configured correctly. Please install an updated Plate build."
+        }
+        let callback = client.split(separator: ".").reversed().joined(separator: ".")
+        guard callbackSchemes.contains(where: { $0.caseInsensitiveCompare(callback) == .orderedSame }) else {
+            return "This Plate build is missing its Google sign-in callback. Please install an updated build."
+        }
+        return nil
+    }
+}

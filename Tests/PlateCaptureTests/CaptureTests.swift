@@ -7,6 +7,14 @@ import UniformTypeIdentifiers
 import PlateCore
 
 final class CaptureTests: XCTestCase {
+    func testGoogleLoginRequiresMatchingCallbackBeforeCallingSDK() {
+        let client = "123-example.apps.googleusercontent.com"
+        XCTAssertNil(GoogleLoginConfiguration.validationError(clientID: client, callbackSchemes: ["plate", "com.googleusercontent.apps.123-example"]))
+        XCTAssertNotNil(GoogleLoginConfiguration.validationError(clientID: client, callbackSchemes: ["plate", "com.googleusercontent.apps.other-project"]))
+        XCTAssertNotNil(GoogleLoginConfiguration.validationError(clientID: client, callbackSchemes: []))
+        XCTAssertNotNil(GoogleLoginConfiguration.validationError(clientID: "", callbackSchemes: []))
+        XCTAssertNotNil(GoogleLoginConfiguration.validationError(clientID: "invalid", callbackSchemes: []))
+    }
     @MainActor func testRealVisionOCRAndServingPipeline() async throws {
         let lines = ["Nutrition Facts", "Serving size 30 g", "Servings per container 4", "Per 100 g", "Energy 1673.6 kJ", "Protein 20 g", "Total Carbohydrates 60 g", "Total Fat 8 g", "Dietary Fiber 4 g", "Sugars 5 g"]
         let context = try XCTUnwrap(CGContext(data: nil, width: 1200, height: 1200, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
