@@ -8,11 +8,19 @@ private enum Destination: String, CaseIterable, Identifiable {
     var tint: Color { switch self { case .today: .plateMint; case .history: .plateCarb; case .foods: Color(red: 0.85, green: 0.42, blue: 0.48); case .progress: .plateFat; case .settings: Color(red: 0.35, green: 0.55, blue: 0.9) } }
     var icon: String { switch self { case .today: "circle.inset.filled"; case .history: "calendar"; case .foods: "fork.knife"; case .progress: "chart.xyaxis.line"; case .settings: "slider.horizontal.3" } }
 }
+#if os(iOS)
+private enum CompactDestination: Hashable { case today, history, foods, progress, capture }
+#endif
 struct FoundationView: View {
     @State private var model: PlateModel
     // No default argument: a default PlateModel() would be built on every view rebuild.
     init(model: PlateModel) { _model = State(initialValue: model) }
     @State private var destination: Destination = .today
+    #if os(iOS)
+    @State private var compactDestination: CompactDestination = .today
+    @State private var lastCompactDestination: CompactDestination = .today
+    @State private var showCompactSettings = false
+    #endif
     @Namespace private var sidebarSelection
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -89,21 +97,41 @@ struct FoundationView: View {
         .toolbar { ToolbarItem { Button("Log a meal", systemImage: "camera") { model.showCapture = true }.keyboardShortcut("n") } }
     }
     #if os(iOS)
+    // System TabView owns hit testing, the lifted selection lens, refraction and
+    // accessibility. A glassEffect over hand-built buttons cannot provide those.
     private var tabs: some View {
-        TabView(selection: $destination) {
-            Tab("Today", systemImage: "circle.inset.filled", value: Destination.today) { NavigationStack { TodayView() } }
-            Tab("History", systemImage: "calendar", value: Destination.history) { NavigationStack { HistoryView() } }
-            Tab("My Foods", systemImage: "fork.knife", value: Destination.foods) { NavigationStack { FoodsView() } }
-            Tab("Progress", systemImage: "chart.xyaxis.line", value: Destination.progress) { NavigationStack { ProgressViewScreen() } }
-            Tab("Settings", systemImage: "slider.horizontal.3", value: Destination.settings) { NavigationStack { SettingsView() } }
-        }.tint(Color.plateMint).toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 10) {
-                    PlateGlassPageBar(selection: $destination, tint: .plateMint)
-                    Button { model.showCapture = true } label: { Image(systemName: "camera.fill").font(.title3).frame(width: 56, height: 60) }.buttonStyle(PlatePress()).glassEffect(.regular.tint(Color.plateMint.opacity(0.25)).interactive(), in: .capsule).accessibilityLabel("Log a meal")
-                }.padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
+        TabView(selection: $compactDestination) {
+            Tab("Today", systemImage: "circle.inset.filled", value: CompactDestination.today) { compactScreen(.today) }
+            Tab("History", systemImage: "calendar", value: CompactDestination.history) { compactScreen(.history) }
+            Tab("My Foods", systemImage: "fork.knife", value: CompactDestination.foods) { compactScreen(.foods) }
+            Tab("Progress", systemImage: "chart.xyaxis.line", value: CompactDestination.progress) { compactScreen(.progress) }
+            Tab("Log a meal", systemImage: "camera.fill", value: CompactDestination.capture, role: captureTabRole) {
+                PlateBackground(status: .calm).overlay {
+                    CaptureButton { model.showCapture = true }
+                }
             }
-
+        }
+        .onChange(of: compactDestination) { _, selected in
+            if selected == .capture { model.showCapture = true }
+            else { lastCompactDestination = selected }
+        }
+        .onChange(of: model.showCapture) { _, showing in
+            if !showing && compactDestination == .capture { compactDestination = lastCompactDestination }
+        }
+         .sheet(isPresented: $showCompactSettings) {
+            NavigationStack { SettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showCompactSettings = false } } } }.environment(model)
+        }
+    }
+    private var captureTabRole: TabRole? {
+        if #available(iOS 27.0, *) { .prominent } else { nil }
+    }
+    private func compactScreen(_ item: Destination) -> some View {
+        NavigationStack {
+            screen(item)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) {
+                    Button("Settings", systemImage: "slider.horizontal.3") { showCompactSettings = true }
+                } }
+        }
     }
     #endif
     @ViewBuilder private func screen(_ item: Destination) -> some View {
@@ -120,8 +148,6 @@ struct FoundationView: View {
 struct TodayView: View {
     @Environment(PlateModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var macrosOpen = false
-    @State private var showEnergyRemaining = false
     @State private var storyMode = 0
     @State private var mealFilter = 0
     private var visibleMeals: [Meal] { model.store.today.filter { mealFilter == 0 || $0.type == MealType.allCases[mealFilter - 1] } }
@@ -254,48 +280,25 @@ struct TodayView: View {
         }
     }
     private var dashboardHeader: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    Label("Energy today", systemImage: "sparkle").font(.subheadline.bold())
-                    Spacer()
-                    Button { withAnimation(reduceMotion ? nil : .spring(response: 0.5)) { showEnergyRemaining.toggle() } } label: { Image(systemName: showEnergyRemaining ? "arrow.turn.down.left" : "arrow.up.right").font(.subheadline).frame(width: 36, height: 36).background(.white.opacity(0.1), in: .circle) }.buttonStyle(PlatePress()).accessibilityLabel("Switch eaten and remaining calories")
-                }
-                HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(showEnergyRemaining ? abs(model.store.guidance.remaining) : model.store.todayTotal.calories, format: .number.precision(.fractionLength(0))).font(.system(size: 57, weight: .bold, design: .rounded)).tracking(-2).contentTransition(.numericText()).minimumScaleFactor(0.55)
-                        Text(showEnergyRemaining ? (model.store.guidance.remaining < 0 ? "kcal over target" : "kcal left today") : "kcal eaten today").font(.subheadline).foregroundStyle(.white.opacity(0.7))
-                        Text("Target \(Int(model.store.effectiveTargets.nutrients.calories)) kcal").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.65))
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    PlateSculpture().scaleEffect(0.9).frame(width: 120, height: 130)
-                }
-                GeometryReader { geo in
-                    Capsule().fill(.white.opacity(0.13))
-                        .overlay(alignment: .leading) { Capsule().fill(LinearGradient(colors: [Color.plateMint, Color(red: 0.72, green: 0.95, blue: 0.52)], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(1,max(0,model.store.todayTotal.calories/max(1,model.store.effectiveTargets.nutrients.calories)))) }
-                }.frame(height: 8).accessibilityLabel("Calorie progress")
-                Button { withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.82)) { macrosOpen.toggle() } } label: {
-                    HStack(spacing: 10) {
-                        HStack(spacing: -7) {
-                            ForEach(Array([Color.plateMint, .plateCarb, .plateFat].enumerated()), id: \.offset) { index, tint in Text(["P","C","F"][index]).font(.caption2.bold()).frame(width: 27, height: 27).background(tint.gradient, in: .circle).overlay(Circle().stroke(.white.opacity(0.4))) }
-                        }
-                        VStack(alignment: .leading, spacing: 4) { Text(macrosOpen ? "Tuck away macros" : "Where’s my energy from?").font(.caption.bold()); Text("\(Int(model.store.todayTotal.protein)) P · \(Int(model.store.todayTotal.carbs)) C · \(Int(model.store.todayTotal.fat)) F grams").font(.caption2).foregroundStyle(.white.opacity(0.7)) }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.down").font(.caption.bold()).rotationEffect(.degrees(macrosOpen ? 180 : 0))
-                    }.padding(15).background(.white.opacity(0.1), in: .rect(cornerRadius: 20))
-                }.buttonStyle(PlatePress())
-            }.padding(24).foregroundStyle(.white)
-                .background(LinearGradient(colors: [Color(red: 0.13, green: 0.37, blue: 0.31), Color(red: 0.07, green: 0.15, blue: 0.27)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 34))
-                .overlay(RoundedRectangle(cornerRadius: 34).stroke(.white.opacity(0.15)))
-                .shadow(color: Color.plateMint.opacity(0.2), radius: 24, y: 14)
-            if macrosOpen {
-                HStack(alignment: .top, spacing: 9) {
-                    NutrientTile(name: "Protein", symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: .plateMint)
-                    NutrientTile(name: "Carbs", symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: .plateCarb)
-                    NutrientTile(name: "Fat", symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: .plateFat)
-                }.padding(15).plateCard().padding(.top, 14).transition(.opacity.combined(with: .move(edge: .top)))
+        VStack(spacing: 18) {
+            HStack {
+                SectionEyebrow(text: "YOUR DAILY ENERGY")
+                Spacer()
+                Text(model.store.guidance.title).font(.caption.weight(.semibold)).foregroundStyle(model.store.guidance.state.color).padding(.horizontal, 10).padding(.vertical, 7).background(model.store.guidance.state.color.opacity(0.10), in: .capsule)
             }
-        }.sensoryFeedback(.selection, trigger: macrosOpen)
-            .animation(reduceMotion ? nil : .spring(response: 0.6), value: model.store.todayTotal)
+            EnergyOrbit(value: model.store.todayTotal.calories, target: model.store.effectiveTargets.nutrients.calories, tint: model.store.guidance.state.color)
+            Text("Tap the plate to explore your energy").font(.caption2).foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 9) {
+                NutrientTile(name: "Protein", symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: .plateMint)
+                NutrientTile(name: "Carbs", symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: .plateCarb)
+                NutrientTile(name: "Fat", symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: .plateFat)
+            }
+        }.padding(22)
+            .background(LinearGradient(colors: [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 34))
+            .overlay(RoundedRectangle(cornerRadius: 34).stroke(.white.opacity(0.13)))
+            .shadow(color: Color.plateMint.opacity(0.18), radius: 25, y: 14)
+            .environment(\.colorScheme, .dark)
+            .animation(reduceMotion ? nil : .spring(response: 0.7), value: model.store.todayTotal)
     }
 }
 
@@ -359,73 +362,3 @@ struct DailySummaryCard: View {
     }
 }
 #Preview { FoundationView(model: PlateModel()) }
-
-#if os(iOS)
-private struct PlateGlassPageBar: View {
-    @Binding var selection: Destination
-    let tint: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceTransparency) private var reducedTransparency
-    private let inset: CGFloat = 5
-
-    var body: some View {
-        GeometryReader { geometry in
-            let itemWidth = max(1, (geometry.size.width - inset * 2) / CGFloat(Destination.allCases.count))
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(scheme == .dark ? Color.white.opacity(0.15) : tint.opacity(0.11))
-                    .frame(width: itemWidth, height: 52)
-                    .offset(x: inset + CGFloat(Destination.allCases.firstIndex(of: selection) ?? 0) * itemWidth)
-                    .overlay(Capsule().stroke(.white.opacity(scheme == .dark ? 0.11 : 0.42), lineWidth: 0.6))
-                    .shadow(color: tint.opacity(0.12), radius: 10, y: 4)
-                    .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.80), value: selection)
-                    .allowsHitTesting(false)
-                HStack(spacing: 0) {
-                    ForEach(Destination.allCases) { destination in
-                        Button { select(destination) } label: {
-                            VStack(spacing: 2) {
-                                Image(systemName: destination.icon)
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .symbolEffect(.bounce, value: reduceMotion ? false : selection == destination)
-                                    .frame(height: 25)
-                                Text(destination.rawValue)
-                                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                                    .lineLimit(1).minimumScaleFactor(0.72)
-                            }
-                            .foregroundStyle(selection == destination ? tint : Color.primary)
-                            .frame(width: itemWidth, height: 52)
-                            .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(destination.rawValue)
-                        .accessibilityAddTraits(selection == destination ? .isSelected : [])
-                    }
-                }.padding(.horizontal, inset)
-            }
-            .frame(width: geometry.size.width, height: 60)
-            .contentShape(Capsule())
-            .glassEffect(reducedTransparency ? .identity : .regular.interactive(), in: .capsule)
-            .background { if reducedTransparency { Capsule().fill(.background) } }
-            .overlay(Capsule().stroke(.white.opacity(scheme == .dark ? 0.10 : 0.46), lineWidth: 0.7))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.22 : 0.07), radius: 18, y: 8)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard value.location.y >= -10, value.location.y <= 70 else { return }
-                        let index = min(Destination.allCases.count - 1, max(0, Int((value.location.x - inset) / itemWidth)))
-                        select(Destination.allCases[index])
-                    }
-            )
-            .sensoryFeedback(.selection, trigger: selection)
-        }
-        .frame(height: 60)
-        .accessibilityElement(children: .contain)
-    }
-    private func select(_ destination: Destination) {
-        guard selection != destination else { return }
-        selection = destination
-    }
-}
-
-#endif
