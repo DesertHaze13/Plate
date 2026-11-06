@@ -148,6 +148,9 @@ struct FoundationView: View {
 struct TodayView: View {
     @Environment(PlateModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var goalStates: [TargetFillState] { TargetProgress.all(eaten: model.store.todayTotal, targets: model.store.effectiveTargets).map(\.state) }
+    @State private var warningFeedback = 0
+    @State private var metFeedback = 0
     @State private var storyMode = 0
     @State private var mealFilter = 0
     private var visibleMeals: [Meal] { model.store.today.filter { mealFilter == 0 || $0.type == MealType.allCases[mealFilter - 1] } }
@@ -165,10 +168,12 @@ struct TodayView: View {
                         PlatePageTitle(eyebrow: "PLATE / \(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))", title: "Good food. Good energy.", subtitle: "A little intention. A stronger you.")
                         if wide { CaptureButton { model.showCapture = true } }
                     }
+                    TargetWarningStrip(progress: TargetProgress.all(eaten: model.store.todayTotal, targets: model.store.effectiveTargets))
                     let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 24)) : AnyLayout(VStackLayout(spacing: 24))
                     layout {
                         VStack(spacing: 22) {
                             dashboardHeader
+                            TargetWarningsCard(eaten: model.store.todayTotal, targets: model.store.effectiveTargets)
                             quickCapture
                             if wide { DailySummaryCard(meals: model.store.today, target: model.store.effectiveTargets) }
                         }.frame(maxWidth: .infinity)
@@ -206,9 +211,21 @@ struct TodayView: View {
             #endif
         }
         .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.85), value: mealFilter)
-        .sensoryFeedback(.success, trigger: model.store.guidance.state == .hit)
-        .sensoryFeedback(.warning, trigger: model.store.guidance.state == .over)
+        .onChange(of: goalStates) { old, new in targetStatesChanged(from: old, to: new) }
+        .sensoryFeedback(.warning, trigger: warningFeedback)
+        .sensoryFeedback(.success, trigger: metFeedback)
     }
+    private func targetStatesChanged(from old: [TargetFillState], to new: [TargetFillState]) {
+        var warn = false
+        var met = false
+        for (index, state) in new.enumerated() where old.indices.contains(index) && old[index] != state {
+            if state == .near || state == .over { warn = true }
+            if state == .met { met = true }
+        }
+        if warn { warningFeedback += 1 }
+        else if met { metFeedback += 1 }
+    }
+
     private var emptyJournal: some View {
         VStack(alignment: .leading, spacing: 18) {
             ZStack {
@@ -289,9 +306,9 @@ struct TodayView: View {
             EnergyOrbit(value: model.store.todayTotal.calories, target: model.store.effectiveTargets.nutrients.calories, tint: model.store.guidance.state.color)
             Text("Tap the plate to explore your energy").font(.caption2).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 9) {
-                NutrientTile(name: "Protein", symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: .plateMint)
-                NutrientTile(name: "Carbs", symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: .plateCarb)
-                NutrientTile(name: "Fat", symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: .plateFat)
+                NutrientTile(nutrient: .protein, warningFraction: model.store.effectiveTargets.warningFraction, symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: .plateMint)
+                NutrientTile(nutrient: .carbs, warningFraction: model.store.effectiveTargets.warningFraction, symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: .plateCarb)
+                NutrientTile(nutrient: .fat, warningFraction: model.store.effectiveTargets.warningFraction, symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: .plateFat)
             }
         }.padding(22)
             .background(LinearGradient(colors: [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 34))

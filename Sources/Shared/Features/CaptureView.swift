@@ -31,6 +31,11 @@ struct CaptureView: View {
     @State private var mealType = MealType.guess(at: .now)
     private var selected: [FoodItem] { items.filter { !excluded.contains($0.id) } }
     private var totals: Nutrients { selected.reduce(.zero) { $0 + $1.total } }
+    private var reviewTargets: Targets {
+        let training = (model.store.account.settings.trainingDayKeys ?? []).contains(DayKey.make(mealDate))
+        return training ? model.store.account.settings.trainingDayTargets ?? model.store.targets : model.store.targets
+    }
+    private var projectedTotals: Nutrients { HistoryMath.totals(model.store.meals, on: mealDate) + totals }
     private var canSave: Bool { !selected.isEmpty && selected.allSatisfy { ($0.needsReviewFields ?? []).isEmpty } && Meal(items: selected).isValid }
     var body: some View {
         NavigationStack {
@@ -65,6 +70,9 @@ struct CaptureView: View {
                             Picker("Meal", selection: $mealType) { ForEach(MealType.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }
                             Toggle("Save foods to My Foods", isOn: $saveFood)
                         }.padding(20).plateCard()
+                        if canSave {
+                            TargetWarningsCard(eaten: projectedTotals, targets: reviewTargets, projected: true, dayLabel: Calendar.current.isDateInToday(mealDate) ? "Today" : mealDate.formatted(.dateTime.month(.abbreviated).day()))
+                        }
                     }
                     if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(.orange).font(.callout).textSelection(.enabled) }
                 }.padding(24).frame(maxWidth: 720)

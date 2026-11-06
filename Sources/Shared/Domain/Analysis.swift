@@ -68,3 +68,42 @@ public enum HistoryMath {
         return count
     }
 }
+
+public enum TrackedNutrient: String, CaseIterable, Identifiable, Sendable {
+    case calories, protein, carbs, fat
+    public var id: String { rawValue }
+    public var title: String { switch self { case .calories: "Calories"; case .protein: "Protein"; case .carbs: "Carbs"; case .fat: "Fat" } }
+    public var unit: String { self == .calories ? "kcal" : "g" }
+    public func amount(in nutrients: Nutrients) -> Double {
+        switch self { case .calories: nutrients.calories; case .protein: nutrients.protein; case .carbs: nutrients.carbs; case .fat: nutrients.fat }
+    }
+}
+public enum TargetFillState: String, Equatable, Sendable { case under, near, met, over, unset }
+/// Derived from the selected day's totals and targets; never changes food data or goals.
+public struct TargetProgress: Identifiable, Equatable, Sendable {
+    public let nutrient: TrackedNutrient
+    public let amount: Double
+    public let target: Double
+    public let state: TargetFillState
+    public var id: TrackedNutrient { nutrient }
+    public var remaining: Double { max(0, target - amount) }
+    public var excess: Double { max(0, amount - target) }
+    public var fraction: Double { target > 0 ? amount / target : 0 }
+    public init(nutrient: TrackedNutrient, amount: Double, target: Double, warningFraction: Double = 0.85, tolerance: Double = 0) {
+        self.nutrient = nutrient
+        self.amount = amount.isFinite && amount >= 0 ? amount : 0
+        self.target = target.isFinite && target > 0 ? target : 0
+        guard amount.isFinite, amount >= 0, target.isFinite, target > 0 else { state = .unset; return }
+        let tolerance = tolerance.isFinite ? max(0, tolerance) : 0
+        let threshold = warningFraction.isFinite ? min(1, max(0.5, warningFraction)) : 0.85
+        if amount > target + tolerance { state = .over }
+        else if abs(amount - target) <= tolerance { state = .met }
+        else if amount / target >= threshold { state = .near }
+        else { state = .under }
+    }
+    public static func all(eaten: Nutrients, targets: Targets) -> [TargetProgress] {
+        TrackedNutrient.allCases.map { nutrient in
+            TargetProgress(nutrient: nutrient, amount: nutrient.amount(in: eaten), target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction, tolerance: nutrient == .calories ? targets.tolerance : 0)
+        }
+    }
+}

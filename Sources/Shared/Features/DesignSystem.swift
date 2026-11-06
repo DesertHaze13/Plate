@@ -209,7 +209,10 @@ struct EnergyOrbit: View {
     }
 }
 struct NutrientTile: View {
-    let name: String
+    let nutrient: TrackedNutrient
+    var name: String { nutrient.title }
+    var warningFraction = 0.85
+    private var progress: TargetProgress { TargetProgress(nutrient: nutrient, amount: value, target: target, warningFraction: warningFraction) }
     let symbol: String
     let value: Double
     let target: Double
@@ -230,9 +233,10 @@ struct NutrientTile: View {
                     Capsule().fill(tint.opacity(0.13))
                         .overlay(alignment: .leading) { Capsule().fill(tint.gradient).frame(width: geo.size.width * min(1,max(0,value/max(1,target)))) }
                 }.frame(height: 5)
-                if expanded { Text("\(Int(max(0,target-value))) g left\nTarget \(Int(target)) g").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).transition(.opacity.combined(with: .move(edge: .top))) }
+                Label(progress.state == .under ? "\(targetDifference(progress.remaining, unit: "g")) left" : progress.state.label, systemImage: progress.state.symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(progress.state == .under ? tint : progress.state.tint).fixedSize(horizontal: false, vertical: true)
+                if expanded { Text("\(targetDifference(progress.state == .over ? progress.excess : progress.remaining, unit: "g")) \(progress.state == .over ? "over" : "left")\nTarget \(Int(target)) g").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).transition(.opacity.combined(with: .move(edge: .top))) }
             }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(tint.opacity(0.055), in: .rect(cornerRadius: 23)).overlay(RoundedRectangle(cornerRadius: 23).stroke(tint.opacity(0.12)))
-        }.buttonStyle(PlatePress()).sensoryFeedback(.selection, trigger: expanded).accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams").accessibilityHint("Show remaining grams")
+        }.buttonStyle(PlatePress()).sensoryFeedback(.selection, trigger: expanded).accessibilityLabel("\(name), \(value.formatted()) of \(target.formatted()) grams. \(progress.state.label).").accessibilityHint("Show remaining grams")
     }
 }
 
@@ -273,5 +277,73 @@ struct PlateCalendar: View {
     }
     private func move(_ amount: Int) {
         withAnimation(reduced ? nil : .smooth) { month = calendar.date(byAdding: .month, value: amount, to: month) ?? month }
+    }
+}
+
+
+extension TargetFillState {
+    var tint: Color { switch self { case .under, .unset: .secondary; case .near: .orange; case .met: .plateMint; case .over: .orange } }
+    var symbol: String { switch self { case .under: "circle.dashed"; case .near: "exclamationmark.circle.fill"; case .met: "checkmark.circle.fill"; case .over: "exclamationmark.triangle.fill"; case .unset: "minus.circle" } }
+    var label: String { switch self { case .under: "Room left"; case .near: "Almost full"; case .met: "Target met"; case .over: "Over target"; case .unset: "No target" } }
+}
+func targetDifference(_ amount: Double, unit: String) -> String {
+    if amount > 0 && amount < 0.1 { return "Less than 0.1 \(unit)" }
+    return "\(amount.formatted(.number.precision(.fractionLength(0...1)))) \(unit)"
+}
+struct TargetWarningStrip: View {
+    let progress: [TargetProgress]
+    private var flagged: [TargetProgress] { progress.filter { $0.state == .met || $0.state == .over || $0.state == .near } }
+    var body: some View {
+        if !flagged.isEmpty {
+            Label(flagged.map { "\($0.nutrient.title): \($0.state == .met && $0.nutrient == .calories ? "in range" : $0.state.label.lowercased())" }.joined(separator: " · "), systemImage: flagged.contains { $0.state == .over || $0.state == .near } ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(flagged.contains { $0.state == .over || $0.state == .near } ? Color.orange : Color.plateMint)
+                .fixedSize(horizontal: false, vertical: true).padding(16).frame(maxWidth: .infinity, alignment: .leading).plateCard()
+                .accessibilityElement(children: .combine)
+        }
+    }
+}
+struct TargetWarningsCard: View {
+    let eaten: Nutrients
+    let targets: Targets
+    var projected = false
+    var dayLabel = "Today"
+    private var progress: [TargetProgress] { TargetProgress.all(eaten: eaten, targets: targets) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            HStack {
+                PlateIconTile(symbol: "checklist", tint: .plateMint, size: 34)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(projected ? "After this meal" : "Your target check-in").font(.system(.headline, design: .rounded))
+                    Text(projected ? "\(dayLabel) · projected totals" : "\(dayLabel) · logged totals").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            ForEach(progress) { item in
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(item.nutrient.title).font(.subheadline.bold())
+                        Spacer()
+                        Label(item.state == .met && item.nutrient == .calories ? "In target range" : item.state.label, systemImage: item.state.symbol).font(.caption.weight(.semibold)).foregroundStyle(item.state.tint)
+                    }
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("\(item.amount.formatted(.number.precision(.fractionLength(0...1)))) / \(item.target.formatted(.number.precision(.fractionLength(0...1)))) \(item.nutrient.unit)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Spacer(minLength: 6)
+                        Text(detail(item)).font(.caption.weight(.medium)).foregroundStyle(item.state == .under ? Color.secondary : item.state.tint)
+                    }
+                    GeometryReader { geo in
+                        Capsule().fill(item.state.tint.opacity(0.10)).overlay(alignment: .leading) { Capsule().fill(item.state == .under ? Color.plateMint : item.state.tint).frame(width: geo.size.width * min(1,max(0,item.fraction))) }
+                    }.frame(height: 4)
+                }.accessibilityElement(children: .combine)
+            }
+            Text("Based on your configured targets. The warning starts at \(Int((targets.warningFraction.isFinite ? min(1,max(0.5,targets.warningFraction)) : 0.85) * 100))%. Calories use your on-target tolerance; macros are met at 100%.").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }.padding(22).plateCard()
+    }
+    private func detail(_ item: TargetProgress) -> String {
+        switch item.state {
+        case .unset: "Set a target"
+        case .over: "\(targetDifference(item.excess, unit: item.nutrient.unit)) over"
+        case .met: item.nutrient == .calories ? "Within your range" : "\(item.nutrient.title) goal met"
+        case .under, .near: "\(targetDifference(item.remaining, unit: item.nutrient.unit)) left"
+        }
     }
 }

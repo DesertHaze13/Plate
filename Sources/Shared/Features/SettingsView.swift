@@ -85,7 +85,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("Different targets on training days", isOn: $separateTraining).tint(Color.plateMint)
                     if separateTraining { TargetFields(title: "Training day", targets: $trainingTargets) }
-                    HStack { Text("Almost-there threshold"); Spacer(); TextField("Fraction", value: $targets.warningFraction, format: .percent).multilineTextAlignment(.trailing).frame(width: 90) }
+                    HStack { Text("Calorie & macro warning threshold"); Spacer(); TextField("Fraction", value: $targets.warningFraction, format: .percent).multilineTextAlignment(.trailing).frame(width: 90) }
                     HStack { Text("On-target tolerance"); Spacer(); TextField("kcal", value: $targets.tolerance, format: .number).multilineTextAlignment(.trailing).frame(width: 90); Text("kcal").foregroundStyle(.secondary) }
                 }.padding(22).plateCard()
                 VStack(alignment: .leading, spacing: 16) {
