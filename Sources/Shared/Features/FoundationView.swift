@@ -173,6 +173,7 @@ struct TodayView: View {
                     layout {
                         VStack(spacing: 22) {
                             dashboardHeader
+                            PlatePieExplorer(meals: model.store.today, targets: model.store.effectiveTargets)
                             TargetWarningsCard(eaten: model.store.todayTotal, targets: model.store.effectiveTargets)
                             quickCapture
                             if wide { DailySummaryCard(meals: model.store.today, target: model.store.effectiveTargets) }

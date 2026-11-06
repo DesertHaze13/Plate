@@ -67,6 +67,11 @@ struct ProgressViewScreen: View {
             return DayPoint(date: day, nutrients: HistoryMath.totals(model.store.meals, on: day))
         }
     }
+    private var periodMeals: [Meal] {
+        let start = days.first?.date ?? Calendar.current.startOfDay(for: .now)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now)) ?? .now
+        return model.store.meals.filter { $0.timestamp >= start && $0.timestamp < end }
+    }
     private var loggedDays: [DayPoint] { days.filter { point in model.store.meals.contains { Calendar.current.isDate($0.timestamp, inSameDayAs: point.date) } } }
     private var average: Nutrients { loggedDays.isEmpty ? .zero : loggedDays.reduce(.zero) { $0 + $1.nutrients }.scaled(by: 1/Double(loggedDays.count)) }
     var body: some View {
@@ -97,19 +102,7 @@ struct ProgressViewScreen: View {
                         RuleMark(y: .value("Protein target", model.store.targets.nutrients.protein)).lineStyle(StrokeStyle(dash: [4,4])).foregroundStyle(.secondary)
                     }.chartYAxisLabel("g").accessibilityLabel("Protein consistency, target \(Int(model.store.targets.nutrients.protein)) grams daily")
                 }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Average macro split").font(.headline)
-                    if loggedDays.isEmpty { Text("Log your first meal to see your macro balance.").foregroundStyle(.secondary) }
-                    else {
-                        Chart {
-                            SectorMark(angle: .value("Protein calories", average.protein*4), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(Color.plateMint)
-                            SectorMark(angle: .value("Carb calories", average.carbs*4), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(Color.plateCarb)
-                            SectorMark(angle: .value("Fat calories", average.fat*9), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(Color.plateFat)
-                        }.frame(height: 170).accessibilityLabel("Average macros on logged days: \(Int(average.protein)) grams protein, \(Int(average.carbs)) grams carbs, \(Int(average.fat)) grams fat")
-                        Text("\(Int(average.protein)) g protein · \(Int(average.carbs)) g carbs · \(Int(average.fat)) g fat").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Text("Averages include logged days only. Macro percentages use 4/4/9 kcal per gram.").font(.caption2).foregroundStyle(.secondary)
-                }.padding(22).frame(maxWidth: .infinity, alignment: .leading).plateCard()
+                PlatePieExplorer(meals: periodMeals, targets: model.store.targets, loggedDays: loggedDays.count, isPeriod: true, title: "Your nutrition, in slices")
                 weightCard
                 }
                 if let activeEnergy { Label("Active energy today: \(Int(activeEnergy)) kcal", systemImage: "figure.walk").font(.caption).foregroundStyle(.secondary) }

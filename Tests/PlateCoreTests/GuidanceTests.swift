@@ -67,4 +67,39 @@ final class GuidanceTests: XCTestCase {
         XCTAssertEqual(target.nutrients.fat, 70)
     }
 
+    func testPieMacroSharesUseEnergyAndPreserveGrams() {
+        let slices = PieBreakdown.macros(.init(calories: 400, protein: 20, carbs: 60, fat: 8))
+        XCTAssertEqual(slices.map(\.calories), [80, 240, 72])
+        XCTAssertEqual(slices.map(\.grams), [20, 60, 8])
+        XCTAssertEqual(slices.reduce(0) { $0 + $1.calories }, 392)
+    }
+    func testPieSelectionUsesCumulativeEnergyAndExactBoundaries() {
+        let slices = PieBreakdown.macros(.init(protein: 20, carbs: 60, fat: 8))
+        XCTAssertEqual(PieBreakdown.slice(at: 0, in: slices)?.nutrient, .protein)
+        XCTAssertEqual(PieBreakdown.slice(at: 79.9, in: slices)?.nutrient, .protein)
+        XCTAssertEqual(PieBreakdown.slice(at: 80, in: slices)?.nutrient, .carbs)
+        XCTAssertEqual(PieBreakdown.slice(at: 320, in: slices)?.nutrient, .fat)
+        XCTAssertEqual(PieBreakdown.slice(at: 392, in: slices)?.nutrient, .fat)
+        XCTAssertNil(PieBreakdown.slice(at: 393, in: slices))
+        XCTAssertNil(PieBreakdown.slice(at: -1, in: slices))
+    }
+    func testPieSkipsZeroAndInvalidSectorsWithoutFabricatingEnergy() {
+        XCTAssertNil(PieBreakdown.slice(at: 0, in: PieBreakdown.macros(.zero)))
+        let slices = PieBreakdown.macros(.init(protein: .nan, carbs: 1, fat: 0))
+        XCTAssertEqual(PieBreakdown.slice(at: 0, in: slices)?.nutrient, .carbs)
+        XCTAssertNil(PieBreakdown.slice(at: .nan, in: slices))
+        XCTAssertEqual(slices.reduce(0) { $0 + $1.calories }, 4)
+    }
+    func testFoodCategoryPieCountsPortionsAndDoesNotCountMacrosTwice() {
+        let rice = FoodItem(name: "Rice", category: .carbs, servingDescription: "bowl", nutrients: .init(calories: 200, carbs: 40), quantity: 2)
+        let fish = FoodItem(name: "Fish", category: .protein, servingDescription: "portion", nutrients: .init(calories: 150, protein: 25))
+        let meals = [Meal(items: [rice, fish])]
+        let slices = PieBreakdown.foodCategories(meals)
+        XCTAssertEqual(slices.count, 2)
+        XCTAssertEqual(slices.first { $0.category == .carbs }?.calories, 400)
+        XCTAssertEqual(slices.first { $0.category == .protein }?.calories, 150)
+        XCTAssertEqual(slices.reduce(0) { $0 + $1.calories }, 550)
+        XCTAssertTrue(slices.allSatisfy { $0.grams == nil && $0.nutrient == nil })
+    }
+
 }

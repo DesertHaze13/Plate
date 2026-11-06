@@ -107,3 +107,40 @@ public struct TargetProgress: Identifiable, Equatable, Sendable {
         }
     }
 }
+
+public struct PlatePieSlice: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let calories: Double
+    public let grams: Double?
+    public let nutrient: TrackedNutrient?
+    public let category: FoodCategory?
+}
+public enum PieBreakdown {
+    private static func safe(_ number: Double) -> Double { number.isFinite && number > 0 ? number : 0 }
+    public static func macros(_ nutrients: Nutrients) -> [PlatePieSlice] {
+        [TrackedNutrient.protein, .carbs, .fat].map { nutrient in
+            let grams = safe(nutrient.amount(in: nutrients))
+            return PlatePieSlice(id: "macro/\(nutrient.rawValue)", title: nutrient.title, calories: grams * (nutrient == .fat ? 9 : 4), grams: grams, nutrient: nutrient, category: nil)
+        }
+    }
+    public static func foodCategories(_ meals: [Meal]) -> [PlatePieSlice] {
+        FoodCategory.allCases.compactMap { category in
+            let calories = meals.flatMap(\.items).filter { $0.category == category }.reduce(0) { $0 + safe($1.total.calories) }
+            guard calories > 0 else { return nil }
+            return PlatePieSlice(id: "food/\(category.rawValue)", title: category.rawValue.capitalized, calories: calories, grams: nil, nutrient: nil, category: category)
+        }
+    }
+    /// Charts reports cumulative energy, not degrees. Zero-size sectors have no hit area.
+    public static func slice(at energy: Double, in slices: [PlatePieSlice]) -> PlatePieSlice? {
+        let visible = slices.filter { $0.calories.isFinite && $0.calories > 0 }
+        let total = visible.reduce(0) { $0 + $1.calories }
+        guard energy.isFinite, energy >= 0, total > 0, energy <= total else { return nil }
+        var edge = 0.0
+        for slice in visible {
+            edge += slice.calories
+            if energy < edge { return slice }
+        }
+        return visible.last
+    }
+}

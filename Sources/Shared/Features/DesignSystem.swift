@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import PlateCore
 
 extension Color {
@@ -345,5 +346,126 @@ struct TargetWarningsCard: View {
         case .met: item.nutrient == .calories ? "Within your range" : "\(item.nutrient.title) goal met"
         case .under, .near: "\(targetDifference(item.remaining, unit: item.nutrient.unit)) left"
         }
+    }
+}
+
+
+private struct PieContribution: Identifiable {
+    let meal: Meal
+    let item: FoodItem
+    let energy: Double
+    var id: String { meal.id + "/" + item.id }
+}
+struct PlatePieExplorer: View {
+    let meals: [Meal]
+    let targets: Targets
+    var loggedDays = 1
+    var isPeriod = false
+    var title = "Explore your plate"
+    @Environment(PlateModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var mode = 0
+    @State private var angle: Double?
+    @State private var selectedID: String?
+    @State private var showAll = false
+    @State private var detailMeal: Meal?
+    private var totals: Nutrients { meals.reduce(.zero) { $0 + $1.total } }
+    private var slices: [PlatePieSlice] { mode == 0 ? PieBreakdown.macros(totals) : PieBreakdown.foodCategories(meals) }
+    private var totalEnergy: Double { slices.reduce(0) { $0 + $1.calories } }
+    private var selected: PlatePieSlice? { slices.first { $0.id == selectedID } }
+    private var contributions: [PieContribution] {
+        guard let selected else { return [] }
+        return meals.flatMap { meal in meal.items.compactMap { item -> PieContribution? in
+            let energy: Double
+            if let nutrient = selected.nutrient { energy = nutrient.amount(in: item.total) * (nutrient == .fat ? 9 : 4) }
+            else { energy = item.category == selected.category ? item.total.calories : 0 }
+            guard energy.isFinite, energy > 0 else { return nil }
+            return PieContribution(meal: meal, item: item, energy: energy)
+        } }.sorted { $0.energy > $1.energy }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack { Text(title).font(.system(.title3, design: .rounded, weight: .bold)); Spacer(); Image(systemName: "chart.pie.fill").foregroundStyle(Color.plateFat) }
+            PlateSegmentedControl(options: ["Macros", "Food categories"], selection: $mode)
+            if totalEnergy > 0 { pie }
+            else { ContentUnavailableView("No slices yet", systemImage: "chart.pie", description: Text("Log a meal to explore its nutrition and food categories.")).frame(height: 200) }
+            ForEach(slices) { slice in legendRow(slice) }
+            if let selected {
+                detail(selected).transition(.opacity.combined(with: .move(edge: .top)))
+            } else if totalEnergy > 0 { Text("Tap a slice or category to explore its foods.").font(.caption).foregroundStyle(.secondary) }
+            Text(isPeriod ? "Period totals across \(loggedDays) logged \(loggedDays == 1 ? "day" : "days"). Macro shares use 4/4/9 kcal per gram; food categories use logged calories." : "Macro shares use 4/4/9 kcal per gram; food categories use logged calories. These totals may differ from label calories.").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }.padding(22).plateCard()
+            .animation(reduced ? nil : .spring(response: 0.42, dampingFraction: 0.8), value: selectedID)
+            .sensoryFeedback(.selection, trigger: selectedID)
+            .onChange(of: angle) { _, value in if let value { selectedID = PieBreakdown.slice(at: value, in: slices)?.id } }
+            .onChange(of: mode) { _, _ in angle = nil; selectedID = nil; showAll = false }
+            .onChange(of: slices) { _, values in if let selectedID, !values.contains(where: { $0.id == selectedID }) { self.selectedID = nil }; angle = nil }
+            .sheet(item: $detailMeal) { MealDetailView(meal: $0).environment(model) }
+    }
+    private var pie: some View {
+        Chart(slices.filter { $0.calories > 0 }) { slice in
+            SectorMark(angle: .value("Energy", slice.calories), innerRadius: .ratio(0.61), outerRadius: .ratio(selectedID == slice.id ? 1 : 0.91), angularInset: 3)
+                .cornerRadius(5).foregroundStyle(color(slice).gradient)
+                .opacity(selectedID == nil || selectedID == slice.id ? 1 : 0.35)
+                .accessibilityLabel(slice.title).accessibilityValue("\(slice.calories.formatted(.number.precision(.fractionLength(0...1)))) kcal")
+        }.chartLegend(.hidden).chartAngleSelection(value: $angle)
+            .chartGesture { proxy in
+                DragGesture(minimumDistance: 0)
+                    .onChanged { proxy.selectAngleValue(at: proxy.angle(at: $0.location)) }
+                    .onEnded { proxy.selectAngleValue(at: proxy.angle(at: $0.location)) }
+            }
+            .frame(height: 235)
+            .overlay {
+                VStack(spacing: 4) {
+                    Text(selected?.title ?? "All categories").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(selected.map { "\(Int(($0.calories / (totalEnergy > 0 ? totalEnergy : 1) * 100).rounded()))%" } ?? totalEnergy.formatted(.number.precision(.fractionLength(0)))).font(.system(size: 32, weight: .bold, design: .rounded)).contentTransition(.numericText())
+                    Text(selected == nil ? "kcal in this chart" : "of chart energy").font(.caption2).foregroundStyle(.secondary)
+                }.frame(width: 140).multilineTextAlignment(.center).allowsHitTesting(false).accessibilityHidden(true)
+            }
+    }
+    private func legendRow(_ slice: PlatePieSlice) -> some View {
+        Button { select(slice) } label: {
+            HStack(spacing: 10) {
+                Circle().fill(color(slice).gradient).frame(width: 11, height: 11)
+                Text(slice.title).font(.subheadline.weight(selectedID == slice.id ? .bold : .medium))
+                Spacer(minLength: 0)
+                Text("\(Int((slice.calories / (totalEnergy > 0 ? totalEnergy : 1) * 100).rounded()))%").font(.subheadline.bold().monospacedDigit())
+                Image(systemName: selectedID == slice.id ? "chevron.up" : "chevron.right").font(.caption2.bold())
+            }.padding(12).background(selectedID == slice.id ? color(slice).opacity(0.12) : .primary.opacity(0.025), in: .rect(cornerRadius: 16))
+        }.buttonStyle(PlatePress()).foregroundStyle(.primary).accessibilityLabel("Explore \(slice.title)").accessibilityAddTraits(selectedID == slice.id ? .isSelected : [])
+    }
+    private func detail(_ slice: PlatePieSlice) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(slice.title).font(.system(.title2, design: .rounded, weight: .bold))
+                Spacer()
+                Text("\(slice.calories.formatted(.number.precision(.fractionLength(0...1)))) kcal").font(.subheadline.bold()).foregroundStyle(color(slice))
+            }
+            if let nutrient = slice.nutrient, let grams = slice.grams {
+                let average = grams / Double(max(1,loggedDays))
+                let progress = TargetProgress(nutrient: nutrient, amount: average, target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction)
+                Text("\(grams.formatted(.number.precision(.fractionLength(0...1)))) g \(isPeriod ? "in this period" : "today")").font(.headline)
+                Label("\(isPeriod ? "Daily average" : "Today"): \(average.formatted(.number.precision(.fractionLength(0...1)))) / \(progress.target.formatted(.number.precision(.fractionLength(0...1)))) g · \(progress.state.label)", systemImage: progress.state.symbol).font(.caption).foregroundStyle(progress.state.tint).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Foods contributing to this slice").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            ForEach(showAll ? contributions : Array(contributions.prefix(5))) { contribution in
+                Button { detailMeal = contribution.meal } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) { Text(contribution.item.name).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading); Text("\(contribution.meal.timestamp.formatted(.dateTime.month(.abbreviated).day())) · \(contribution.meal.type.rawValue.capitalized)").font(.caption2).foregroundStyle(.secondary) }
+                        Spacer(minLength: 8)
+                        Text("\(contribution.energy.formatted(.number.precision(.fractionLength(0...1)))) kcal").font(.caption.monospacedDigit())
+                        Image(systemName: "arrow.up.right").font(.caption2)
+                    }.padding(.vertical, 6)
+                }.buttonStyle(PlatePress()).foregroundStyle(.primary).accessibilityHint("Open this meal to inspect its food items")
+            }
+            if contributions.isEmpty { Text("No logged food contributes to this category yet.").font(.caption).foregroundStyle(.secondary) }
+            if contributions.count > 5 { Button(showAll ? "Show top five" : "Show all \(contributions.count) foods") { showAll.toggle() }.font(.caption.bold()).buttonStyle(PlatePress()) }
+            Button("Show all slices") { selectedID = nil; angle = nil }.font(.caption.bold()).buttonStyle(PlatePress())
+        }.padding(16).background(color(slice).opacity(0.06), in: .rect(cornerRadius: 22))
+    }
+    private func select(_ slice: PlatePieSlice) { angle = nil; selectedID = selectedID == slice.id ? nil : slice.id; showAll = false }
+    private func color(_ slice: PlatePieSlice) -> Color {
+        if let nutrient = slice.nutrient { switch nutrient { case .protein: return .plateMint; case .carbs: return .plateCarb; case .fat: return .plateFat; case .calories: return .teal } }
+        switch slice.category { case .protein: return .teal; case .carbs: return .orange; case .fats: return .purple; case .vegetables: return .green; case .fruit: return .pink; case .dairy: return .blue; case .drinks: return .cyan; case .snacks: return .brown; case .sauces: return .red; case nil: return .secondary }
     }
 }
