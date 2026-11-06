@@ -173,7 +173,6 @@ struct TodayView: View {
                     layout {
                         VStack(spacing: 22) {
                             dashboardHeader
-                            PlatePieExplorer(meals: model.store.today, targets: model.store.effectiveTargets)
                             TargetWarningsCard(eaten: model.store.todayTotal, targets: model.store.effectiveTargets)
                             quickCapture
                             if wide { DailySummaryCard(meals: model.store.today, target: model.store.effectiveTargets) }
@@ -198,7 +197,7 @@ struct TodayView: View {
             .scrollEdgeEffectHidden(true, for: .top)
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > 440 } action: { _, pinned in pinnedHeader = pinned }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { if pinnedHeader { stickyHeader.padding(.horizontal, 18).padding(.bottom, 8).transition(.move(edge: .top).combined(with: .opacity)) } }
+        .safeAreaInset(edge: .top, spacing: 0) { if pinnedHeader { pinnedSummary.padding(.horizontal, 18).padding(.bottom, 8).transition(.move(edge: .top).combined(with: .opacity)) } }
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: pinnedHeader)
         .background(PlateBackground(status: model.store.guidance.state)).navigationTitle("Today")
         #if os(iOS)
@@ -278,6 +277,11 @@ struct TodayView: View {
         Button { selectedMeal = meal } label: { MealCard(meal: meal) }.buttonStyle(PlatePress())
         #endif
     }
+    @ViewBuilder private var pinnedSummary: some View {
+        let progress = TargetProgress.all(eaten: model.store.todayTotal, targets: model.store.effectiveTargets)
+        if progress.contains(where: { $0.state == .over }) { TargetWarningStrip(progress: progress, compact: true).background(.background, in: .rect(cornerRadius: 22)) }
+        else { stickyHeader }
+    }
     private var stickyHeader: some View {
         GlassEffectContainer(spacing: 14) {
             VStack(spacing: 10) {
@@ -302,26 +306,9 @@ struct TodayView: View {
         }
     }
     private var dashboardHeader: some View {
-        VStack(spacing: 18) {
-            HStack {
-                SectionEyebrow(text: "YOUR DAILY ENERGY")
-                Spacer()
-                Text(model.store.guidance.title).font(.caption.weight(.semibold)).foregroundStyle(model.store.guidance.state.color).padding(.horizontal, 10).padding(.vertical, 7).background(model.store.guidance.state.color.opacity(0.10), in: .capsule)
-            }
-            EnergyOrbit(value: model.store.todayTotal.calories, target: model.store.effectiveTargets.nutrients.calories, tint: model.store.guidance.state.color)
-            Text("Tap the plate to explore your energy").font(.caption2).foregroundStyle(.secondary)
-            HStack(alignment: .top, spacing: 9) {
-                NutrientTile(nutrient: .protein, warningFraction: model.store.effectiveTargets.warningFraction, symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: .plateMint)
-                NutrientTile(nutrient: .carbs, warningFraction: model.store.effectiveTargets.warningFraction, symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: .plateCarb)
-                NutrientTile(nutrient: .fat, warningFraction: model.store.effectiveTargets.warningFraction, symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: .plateFat)
-            }
-        }.padding(22)
-            .background(LinearGradient(colors: [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 34))
-            .overlay(RoundedRectangle(cornerRadius: 34).stroke(.white.opacity(0.13)))
-            .shadow(color: Color.plateMint.opacity(0.18), radius: 25, y: 14)
-            .environment(\.colorScheme, .dark)
-            .animation(reduceMotion ? nil : .spring(response: 0.7), value: model.store.todayTotal)
+        SlimPlateHero(meals: model.store.today, targets: model.store.effectiveTargets)
     }
+
 }
 
 struct MealCard: View {

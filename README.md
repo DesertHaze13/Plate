@@ -2,7 +2,7 @@
 
 A native SwiftUI food and nutrition tracker for iPhone, iPad, and Mac.
 
-Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its interface includes native Liquid Glass tab navigation, dimensional illustrations, a circular interactive energy hero with macro details, switchable nutrition stories, a custom calendar, charts, and adaptive layouts for each platform.
+Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its interface includes native Liquid Glass tab navigation, dimensional illustrations, a slim selectable macro pie hero with animated counts and a breathing halo, switchable nutrition stories, a custom calendar, charts, and adaptive layouts for each platform.
 
 ## Features
 
@@ -65,7 +65,7 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 12.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 13.
 
 See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.
 
@@ -76,3 +76,7 @@ See [target warnings](Documentation/TARGET_WARNINGS.md) for thresholds, calorie 
 See [the pie explorer](Documentation/PIE_EXPLORER.md) for selectable slices, calorie-share calculations and food drill-down.
 
 Today uses a fully clear title-bar background, with the top scroll-edge blur disabled.
+
+Food photos now use full `gemini-3.5-flash` with a thinking budget before on-device fallback when cloud recognition is allowed. Legacy Flash Lite preferences migrate automatically; custom model overrides remain supported. Indonesian cuisine instructions encourage separate visible sides and descriptive names when a recipe cannot be distinguished. Low-confidence names must be confirmed before saving. Printed nutrition labels still take priority, and cloud opt-out is preserved.
+
+Today’s warning banner is in Indonesian, reports the exact remaining or excess amount for each target, and stays visible while scrolling when a target has been exceeded. The thin macro ring supports slice selection, accessible macro buttons, animated values and a food/category detail sheet. Motion follows Reduce Motion.

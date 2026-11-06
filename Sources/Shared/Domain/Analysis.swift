@@ -144,3 +144,29 @@ public enum PieBreakdown {
         return visible.last
     }
 }
+
+
+public enum RecognitionModel {
+    public static let advanced = "gemini-3.5-flash"
+    public static func modelName(configured: String?) -> String {
+        let name = configured?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty || name == "gemini-3.5-flash-lite" ? advanced : name
+    }
+}
+public extension TrackedNutrient {
+    var indonesianTitle: String {
+        switch self { case .calories: "Kalori"; case .protein: "Protein"; case .carbs: "Karbohidrat"; case .fat: "Lemak" }
+    }
+}
+public extension TargetProgress {
+    var indonesianDifference: String {
+        let value = state == .over ? excess : remaining
+        let formatted = value > 0 && value < 0.1 ? "kurang dari 0,1" : value.formatted(.number.locale(Locale(identifier: "id_ID")).precision(.fractionLength(0...1)))
+        switch state {
+        case .over: return "Lebih \(formatted) \(nutrient.unit)"
+        case .under, .near: return "Sisa \(formatted) \(nutrient.unit)"
+        case .met: return "Target tercapai"
+        case .unset: return "Atur target dahulu"
+        }
+    }
+}

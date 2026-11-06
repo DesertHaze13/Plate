@@ -285,7 +285,7 @@ struct PlateCalendar: View {
 extension TargetFillState {
     var tint: Color { switch self { case .under, .unset: .secondary; case .near: .orange; case .met: .plateMint; case .over: .orange } }
     var symbol: String { switch self { case .under: "circle.dashed"; case .near: "exclamationmark.circle.fill"; case .met: "checkmark.circle.fill"; case .over: "exclamationmark.triangle.fill"; case .unset: "minus.circle" } }
-    var label: String { switch self { case .under: "Room left"; case .near: "Almost full"; case .met: "Target met"; case .over: "Over target"; case .unset: "No target" } }
+    var label: String { switch self { case .under: "Masih tersedia"; case .near: "Hampir penuh"; case .met: "Target tercapai"; case .over: "Melebihi target"; case .unset: "Belum diatur" } }
 }
 func targetDifference(_ amount: Double, unit: String) -> String {
     if amount > 0 && amount < 0.1 { return "Less than 0.1 \(unit)" }
@@ -293,13 +293,34 @@ func targetDifference(_ amount: Double, unit: String) -> String {
 }
 struct TargetWarningStrip: View {
     let progress: [TargetProgress]
-    private var flagged: [TargetProgress] { progress.filter { $0.state == .met || $0.state == .over || $0.state == .near } }
+    var compact = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var pulse = false
+    private var flagged: [TargetProgress] { progress.filter { $0.state == .over || $0.state == .near || $0.state == .met } }
+    private var over: Bool { flagged.contains { $0.state == .over } }
     var body: some View {
         if !flagged.isEmpty {
-            Label(flagged.map { "\($0.nutrient.title): \($0.state == .met && $0.nutrient == .calories ? "in range" : $0.state.label.lowercased())" }.joined(separator: " · "), systemImage: flagged.contains { $0.state == .over || $0.state == .near } ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(flagged.contains { $0.state == .over || $0.state == .near } ? Color.orange : Color.plateMint)
-                .fixedSize(horizontal: false, vertical: true).padding(16).frame(maxWidth: .infinity, alignment: .leading).plateCard()
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: over ? "exclamationmark.triangle.fill" : "exclamationmark.circle.fill")
+                    .font(.title2).scaleEffect(pulse ? 1.12 : 1)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(over ? "Perhatian, asupan melewati target" : "Perhatikan target hari ini").font(.system(.subheadline, design: .rounded, weight: .bold))
+                    ForEach(compact ? flagged.filter { $0.state == .over } : flagged) { item in
+                        Text("\(item.nutrient.indonesianTitle) · \(item.indonesianDifference)").font(.caption.weight(.semibold))
+                    }
+                    if over && !compact { Text("Bandingkan dengan target harianmu saat memilih porsi berikutnya.").font(.caption2) }
+                }
+                Spacer(minLength: 0)
+            }.foregroundStyle(over ? Color(red: 0.9, green: 0.29, blue: 0.2) : .orange)
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(over ? Color.red.opacity(0.10) : Color.orange.opacity(0.10), in: .rect(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).stroke(over ? Color.red.opacity(0.35) : Color.orange.opacity(0.3)))
                 .accessibilityElement(children: .combine)
+                .task(id: flagged.map(\.state)) {
+                    guard !reduced else { return }
+                    withAnimation(.easeInOut(duration: 0.65).repeatCount(4, autoreverses: true)) { pulse = true }
+                    try? await Task.sleep(for: .seconds(3)); pulse = false
+                }
         }
     }
 }
@@ -307,24 +328,24 @@ struct TargetWarningsCard: View {
     let eaten: Nutrients
     let targets: Targets
     var projected = false
-    var dayLabel = "Today"
+    var dayLabel = "Hari ini"
     private var progress: [TargetProgress] { TargetProgress.all(eaten: eaten, targets: targets) }
     var body: some View {
         VStack(alignment: .leading, spacing: 17) {
             HStack {
                 PlateIconTile(symbol: "checklist", tint: .plateMint, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(projected ? "After this meal" : "Your target check-in").font(.system(.headline, design: .rounded))
-                    Text(projected ? "\(dayLabel) · projected totals" : "\(dayLabel) · logged totals").font(.caption).foregroundStyle(.secondary)
+                    Text(projected ? "Setelah makan ini" : "Cek target harian").font(.system(.headline, design: .rounded))
+                    Text(projected ? "\(dayLabel) · perkiraan total" : "\(dayLabel) · total tercatat").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
             ForEach(progress) { item in
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(item.nutrient.title).font(.subheadline.bold())
+                        Text(item.nutrient.indonesianTitle).font(.subheadline.bold())
                         Spacer()
-                        Label(item.state == .met && item.nutrient == .calories ? "In target range" : item.state.label, systemImage: item.state.symbol).font(.caption.weight(.semibold)).foregroundStyle(item.state.tint)
+                        Label(item.state == .met && item.nutrient == .calories ? "Dalam rentang target" : item.state.label, systemImage: item.state.symbol).font(.caption.weight(.semibold)).foregroundStyle(item.state.tint)
                     }
                     HStack(alignment: .firstTextBaseline) {
                         Text("\(item.amount.formatted(.number.precision(.fractionLength(0...1)))) / \(item.target.formatted(.number.precision(.fractionLength(0...1)))) \(item.nutrient.unit)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -336,17 +357,10 @@ struct TargetWarningsCard: View {
                     }.frame(height: 4)
                 }.accessibilityElement(children: .combine)
             }
-            Text("Based on your configured targets. The warning starts at \(Int((targets.warningFraction.isFinite ? min(1,max(0.5,targets.warningFraction)) : 0.85) * 100))%. Calories use your on-target tolerance; macros are met at 100%.").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Peringatan mengikuti target pribadi. Mulai mendekati target pada \(Int(targets.warningFraction * 100))%. Kalori mengikuti toleransi yang kamu atur.").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.padding(22).plateCard()
     }
-    private func detail(_ item: TargetProgress) -> String {
-        switch item.state {
-        case .unset: "Set a target"
-        case .over: "\(targetDifference(item.excess, unit: item.nutrient.unit)) over"
-        case .met: item.nutrient == .calories ? "Within your range" : "\(item.nutrient.title) goal met"
-        case .under, .near: "\(targetDifference(item.remaining, unit: item.nutrient.unit)) left"
-        }
-    }
+    private func detail(_ item: TargetProgress) -> String { item.indonesianDifference }
 }
 
 
@@ -467,5 +481,100 @@ struct PlatePieExplorer: View {
     private func color(_ slice: PlatePieSlice) -> Color {
         if let nutrient = slice.nutrient { switch nutrient { case .protein: return .plateMint; case .carbs: return .plateCarb; case .fat: return .plateFat; case .calories: return .teal } }
         switch slice.category { case .protein: return .teal; case .carbs: return .orange; case .fats: return .purple; case .vegetables: return .green; case .fruit: return .pink; case .dairy: return .blue; case .drinks: return .cyan; case .snacks: return .brown; case .sauces: return .red; case nil: return .secondary }
+    }
+}
+
+/// Thin, selectable macro ring. Only its decorative halo moves; data stays put for accurate taps.
+struct SlimPlateHero: View {
+    let meals: [Meal]
+    let targets: Targets
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var angle: Double?
+    @State private var selectedID: String?
+    @State private var glow = false
+    @State private var showDetails = false
+    private var totals: Nutrients { meals.reduce(.zero) { $0 + $1.total } }
+    private var slices: [PlatePieSlice] { PieBreakdown.macros(totals) }
+    private var selected: PlatePieSlice? { slices.first { $0.id == selectedID } }
+    private var energy: Double { slices.reduce(0) { $0 + $1.calories } }
+    private func tint(_ slice: PlatePieSlice) -> Color {
+        switch slice.nutrient { case .protein: .plateMint; case .carbs: .plateCarb; default: .plateFat }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("TODAY / YOUR PLATE").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
+                Spacer()
+                Button { showDetails = true } label: { Image(systemName: "arrow.up.right").font(.subheadline.bold()).frame(width: 36, height: 36).background(.white.opacity(0.1), in: .circle) }.buttonStyle(PlatePress()).accessibilityLabel("Lihat rincian makanan dan kategori")
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 22) { ring; readout.frame(maxWidth: .infinity, alignment: .leading) }
+                VStack(alignment: .leading, spacing: 18) { ring.frame(maxWidth: .infinity); readout }
+            }
+            HStack(spacing: 8) { ForEach(slices) { slice in macroButton(slice) } }
+            Text(energy > 0 ? "Ketuk irisan untuk melihat makro · Rincian ↗" : "Catat makanan untuk mengisi diagrammu.").font(.caption2).foregroundStyle(.white.opacity(0.55))
+        }.padding(22).foregroundStyle(.white)
+            .background {
+                ZStack(alignment: .topTrailing) {
+                    LinearGradient(colors: [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Circle().fill(Color.plateMint.opacity(glow ? 0.16 : 0.06)).frame(width: 260, height: 260).blur(radius: 35).offset(x: 100, y: -110).scaleEffect(glow ? 1.15 : 0.85)
+                }.clipShape(.rect(cornerRadius: 34))
+            }
+            .overlay(RoundedRectangle(cornerRadius: 34).stroke(.white.opacity(0.13)))
+            .shadow(color: Color.plateMint.opacity(0.16), radius: 24, y: 12)
+            .environment(\.colorScheme, .dark)
+            .animation(reduced ? nil : .spring(response: 0.45, dampingFraction: 0.78), value: selectedID)
+            .animation(reduced ? nil : .smooth(duration: 0.6), value: totals)
+            .onChange(of: angle) { _, value in if let value { selectedID = PieBreakdown.slice(at: value, in: slices)?.id } }
+            .onChange(of: slices) { _, values in angle = nil; if let selectedID, !values.contains(where: { $0.id == selectedID && $0.calories > 0 }) { self.selectedID = nil } }
+            .sensoryFeedback(.selection, trigger: selectedID)
+            .onAppear { if !reduced { withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) { glow = true } } }
+            .onChange(of: reduced) { _, value in if value { glow = false } }
+            .sheet(isPresented: $showDetails) {
+                NavigationStack {
+                    ScrollView { PlatePieExplorer(meals: meals, targets: targets).padding(20) }
+                        .navigationTitle("Rincian piringmu")
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Selesai") { showDetails = false } } }
+                }.frame(minWidth: 320, minHeight: 460)
+            }
+    }
+    private var ring: some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.07), lineWidth: 11).padding(12)
+            if energy > 0 {
+                Chart(slices.filter { $0.calories > 0 }) { slice in
+                    SectorMark(angle: .value("Energi", slice.calories), innerRadius: .ratio(0.81), outerRadius: .ratio(selectedID == slice.id ? 1 : 0.93), angularInset: 3)
+                        .cornerRadius(4).foregroundStyle(tint(slice).gradient)
+                        .opacity(selectedID == nil || selectedID == slice.id ? 1 : 0.3)
+                }.chartLegend(.hidden).chartAngleSelection(value: $angle)
+                    .chartGesture { proxy in DragGesture(minimumDistance: 0).onChanged { proxy.selectAngleValue(at: proxy.angle(at: $0.location)) }.onEnded { proxy.selectAngleValue(at: proxy.angle(at: $0.location)) } }
+            }
+            VStack(spacing: 3) {
+                Text(selected.map { "\(Int(($0.calories / max(1,energy) * 100).rounded()))%" } ?? "\(meals.count)").font(.system(size: 29, weight: .bold, design: .rounded)).contentTransition(.numericText())
+                Text(selected == nil ? "meals" : "energi makro").font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+            }.allowsHitTesting(false).accessibilityHidden(true)
+        }.frame(width: 148, height: 148)
+    }
+    private var readout: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(selected?.nutrient?.indonesianTitle ?? "Energi hari ini").font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.65))
+            Text(selected.map { "\(($0.grams ?? 0).formatted(.number.precision(.fractionLength(0...1)))) g" } ?? "\(Int(totals.calories))").font(.system(size: 35, weight: .bold, design: .rounded)).contentTransition(.numericText()).minimumScaleFactor(0.7).lineLimit(1)
+            if let nutrient = selected?.nutrient {
+                let progress = TargetProgress(nutrient: nutrient, amount: nutrient.amount(in: totals), target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction)
+                Text(progress.indonesianDifference).font(.caption.weight(.semibold)).foregroundStyle(progress.state == .over ? Color.plateCarb : .white.opacity(0.8))
+            } else { Text("/ \(Int(targets.nutrients.calories)) kcal target").font(.caption).foregroundStyle(.white.opacity(0.65)) }
+            if selected != nil { Button("Lihat total") { selectedID = nil; angle = nil }.font(.caption).foregroundStyle(Color.plateMint) }
+        }.fixedSize(horizontal: false, vertical: true)
+    }
+    private func macroButton(_ slice: PlatePieSlice) -> some View {
+        Button { selectedID = selectedID == slice.id ? nil : slice.id; angle = nil } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) { Circle().fill(tint(slice)).frame(width: 5, height: 5); Text(slice.nutrient?.indonesianTitle ?? slice.title).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.65) }
+                Text("\(Int(slice.grams ?? 0)) g").font(.system(.subheadline, design: .rounded, weight: .bold)).contentTransition(.numericText())
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                .background(tint(slice).opacity(selectedID == slice.id ? 0.23 : 0.08), in: .rect(cornerRadius: 15))
+                .overlay(RoundedRectangle(cornerRadius: 15).stroke(tint(slice).opacity(selectedID == slice.id ? 0.65 : 0.15)))
+        }.buttonStyle(PlatePress()).accessibilityLabel("\(slice.nutrient?.indonesianTitle ?? slice.title), \(Int(slice.grams ?? 0)) gram").accessibilityAddTraits(selectedID == slice.id ? .isSelected : [])
     }
 }

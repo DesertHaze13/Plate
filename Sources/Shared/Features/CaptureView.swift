@@ -71,7 +71,7 @@ struct CaptureView: View {
                             Toggle("Save foods to My Foods", isOn: $saveFood)
                         }.padding(20).plateCard()
                         if canSave {
-                            TargetWarningsCard(eaten: projectedTotals, targets: reviewTargets, projected: true, dayLabel: Calendar.current.isDateInToday(mealDate) ? "Today" : mealDate.formatted(.dateTime.month(.abbreviated).day()))
+                            TargetWarningsCard(eaten: projectedTotals, targets: reviewTargets, projected: true, dayLabel: Calendar.current.isDateInToday(mealDate) ? "Hari ini" : mealDate.formatted(.dateTime.month(.abbreviated).day()))
                         }
                     }
                     if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(.orange).font(.callout).textSelection(.enabled) }
@@ -170,7 +170,7 @@ struct CaptureView: View {
                     HStack {
                         if item.source == .label { Label("Read from label", systemImage: "text.viewfinder").foregroundStyle(Color.plateMint) }
                         else if let confidence = item.confidence { Text("\(Int(confidence*100))% confidence").foregroundStyle(.secondary) }
-                        if (item.confidence ?? 1) < 0.75 || !(item.needsReviewFields ?? []).isEmpty { Text("Check this one").foregroundStyle(.orange) }
+                        if (item.confidence ?? 1) < 0.75 || !(item.needsReviewFields ?? []).isEmpty { Text("Perlu diperiksa").foregroundStyle(.orange) }
                     }.font(.caption2)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain)
@@ -225,16 +225,17 @@ struct FoodItemEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Food") { TextField("Name", text: $item.name); TextField("Base serving", text: $item.servingDescription); Picker("Category", selection: $item.category) { ForEach(FoodCategory.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } }
+                Section("Food") { TextField("Name", text: $item.name).onChange(of: item.name) { _, _ in item.needsReviewFields?.removeAll { $0 == "name" } };
+                    if item.needsReviewFields?.contains("name") == true { Text("Identitas makanan belum pasti. Koreksi nama atau konfirmasikan sebelum menyimpan.").font(.caption).foregroundStyle(.orange); Button("Konfirmasi nama makanan") { item.needsReviewFields?.removeAll { $0 == "name" } } }; TextField("Base serving", text: $item.servingDescription); Picker("Category", selection: $item.category) { ForEach(FoodCategory.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } }
                 Section("Amount eaten") { Stepper(value: $item.quantity, in: 0.125...20, step: 0.125) { Text("\(item.quantity.formatted(.number.precision(.fractionLength(0...3)))) servings") } }
                 Section("Nutrition per base serving") {
                     field("Calories", "calories", \.calories, "kcal"); field("Protein", "protein", \.protein, "g"); field("Carbs", "carbs", \.carbs, "g"); field("Fat", "fat", \.fat, "g"); field("Fiber", "fiber", \.fiber, "g"); field("Sugar", "sugar", \.sugar, "g")
                 }
-                if !(item.needsReviewFields ?? []).isEmpty { Text("Highlighted values couldn’t be read. Enter them to confirm. Zero is valid when the label says zero.").foregroundStyle(.orange).font(.caption) }
-            }.navigationTitle("Check your food").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+                if !(item.needsReviewFields ?? []).isEmpty { Text("Periksa kolom yang ditandai. Lengkapi atau konfirmasikan sebelum menyimpan; nilai nol tetap boleh bila benar.").foregroundStyle(.orange).font(.caption) }
+            }.formStyle(.grouped).navigationTitle("Check your food").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         #if os(macOS)
-        .frame(width: 440, height: 570)
+        .frame(width: 600, height: 650)
         #endif
     }
     private func field(_ title: String, _ key: String, _ path: WritableKeyPath<Nutrients, Double>, _ unit: String) -> some View {

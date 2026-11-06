@@ -60,7 +60,7 @@ struct SettingsView: View {
     @State private var separateTraining = false
     @State private var healthEnabled = UserDefaults.standard.bool(forKey: "healthEnabled")
     @AppStorage("cloudRecognitionAllowed") private var cloudAllowed = true
-    @AppStorage("geminiModel") private var geminiModel = "gemini-3.5-flash-lite"
+    @AppStorage("geminiModel") private var geminiModel = RecognitionModel.advanced
     @State private var saved = false
     private var valid: Bool { targets.nutrients.isValid && targets.nutrients.calories > 0 && targets.nutrients.protein > 0 && (0.5...1).contains(targets.warningFraction) && targets.tolerance >= 0 }
     var body: some View {
@@ -90,9 +90,10 @@ struct SettingsView: View {
                 }.padding(22).plateCard()
                 VStack(alignment: .leading, spacing: 16) {
                     SectionEyebrow(text: "Recognition")
-                    Toggle("Allow cloud fallback", isOn: $cloudAllowed).tint(Color.plateMint)
-                    Text("When on-device analysis is unavailable or uncertain, send the compressed food photo to your Firebase Gemini service. Label OCR starts on your device.").font(.caption).foregroundStyle(.secondary)
-                    TextField("Gemini model", text: $geminiModel).textFieldStyle(.roundedBorder)
+                    Toggle("Analisis foto dengan AI cloud", isOn: $cloudAllowed).tint(Color.plateMint)
+                    Text("Foto makanan dianalisis lebih teliti dengan Gemini Flash, termasuk masakan Indonesia. Foto terkompresi dikirim ke Firebase. Label gizi tetap dibaca di perangkat terlebih dahulu.").font(.caption).foregroundStyle(.secondary)
+                    Text("Mode teliti · Gemini Flash dengan penalaran").font(.subheadline.bold())
+                    DisclosureGroup("Pengaturan model lanjutan") { TextField("Gemini model", text: $geminiModel).textFieldStyle(.roundedBorder); Text("Konfigurasi Flash Lite lama otomatis ditingkatkan ke Flash penuh.").font(.caption).foregroundStyle(.secondary) }
                 }.padding(22).plateCard()
                 VStack(alignment: .leading, spacing: 16) {
                     SectionEyebrow(text: "Evening check-in")
