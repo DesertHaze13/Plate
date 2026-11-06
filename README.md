@@ -65,7 +65,7 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 11.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 12.
 
 See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.
 
@@ -74,3 +74,5 @@ On iPhone, native system tabs provide the selection lens and touch tracking. On 
 See [target warnings](Documentation/TARGET_WARNINGS.md) for thresholds, calorie tolerance, macro states, and meal-preview behavior.
 
 See [the pie explorer](Documentation/PIE_EXPLORER.md) for selectable slices, calorie-share calculations and food drill-down.
+
+Today uses a fully clear title-bar background, with the top scroll-edge blur disabled.

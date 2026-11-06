@@ -195,6 +195,7 @@ struct TodayView: View {
                     }
                 }.padding(geometry.size.width < 500 ? 20 : 30).frame(maxWidth: 1440).frame(maxWidth: .infinity)
             }
+            .scrollEdgeEffectHidden(true, for: .top)
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > 440 } action: { _, pinned in pinnedHeader = pinned }
         }
         .safeAreaInset(edge: .top, spacing: 0) { if pinnedHeader { stickyHeader.padding(.horizontal, 18).padding(.bottom, 8).transition(.move(edge: .top).combined(with: .opacity)) } }
@@ -202,6 +203,9 @@ struct TodayView: View {
         .background(PlateBackground(status: model.store.guidance.state)).navigationTitle("Today")
         #if os(iOS)
         .toolbarTitleDisplayMode(.inline)
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+        #else
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         .sheet(item: $selectedMeal) { meal in
             #if os(iOS)
