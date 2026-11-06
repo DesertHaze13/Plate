@@ -109,10 +109,7 @@ struct CaptureView: View {
     }
     private var inputOptions: some View {
         VStack(spacing: 24) {
-            ZStack {
-                Circle().stroke(Color.plateMint.opacity(0.12), lineWidth: 18).frame(width: 130, height: 130)
-                Image(systemName: "camera.macro").font(.system(size: 54, weight: .light)).foregroundStyle(Color.plateMint)
-            }.padding(.top, 16)
+            PlateSculpture().padding(.top, 8)
             Text("Something delicious awaits.").font(.system(.title, design: .rounded, weight: .bold)).multilineTextAlignment(.center)
             Text("Snap your food, a nutrition label, or a menu. You’ll check every item before it’s logged.").foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
             #if os(iOS)

@@ -73,7 +73,7 @@ struct ProgressViewScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 PlatePageTitle(eyebrow: "THE BIGGER PICTURE", title: "Small steps. Real progress.", subtitle: "Explore your rhythm, one day at a time.")
-                Picker("Period", selection: $range) { Text("Week").tag(7); Text("Month").tag(30) }.pickerStyle(.segmented).frame(maxWidth: 320)
+                PlateSegmentedControl(options: ["Week", "Month"], selection: Binding(get: { range == 7 ? 0 : 1 }, set: { range = $0 == 0 ? 7 : 30; selectedDay = nil })).frame(maxWidth: 320)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 310), spacing: 22, alignment: .top)], alignment: .leading, spacing: 22) {
                 HStack(spacing: 20) {
                     stat("On-target streak", "\(HistoryMath.streak(meals: model.store.meals, targets: model.store.targets)) days")

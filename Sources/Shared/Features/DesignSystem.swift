@@ -14,27 +14,23 @@ struct GlassCard: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
         content
-            .background { RoundedRectangle(cornerRadius: 30, style: .continuous).fill(reduceTransparency ? AnyShapeStyle(.background) : AnyShapeStyle(.ultraThinMaterial)) }
-            .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(scheme == .dark ? 0.12 : 0.65), lineWidth: 1))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.15 : 0.035), radius: 24, y: 12)
+            .background { if reduceTransparency { RoundedRectangle(cornerRadius: 30).fill(.background) } }
+            .glassEffect(reduceTransparency ? .identity : .regular, in: .rect(cornerRadius: 30))
+            .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(scheme == .dark ? 0.12 : 0.58), lineWidth: 0.7))
+            .shadow(color: .black.opacity(scheme == .dark ? 0.20 : 0.065), radius: 24, y: 10)
     }
 }
 extension View { func plateCard() -> some View { modifier(GlassCard()) } }
 struct PlateBackground: View {
     let status: DayStatus
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1.0/15, paused: reduceMotion)) { timeline in
-                let phase = reduceMotion ? 0.0 : sin(timeline.date.timeIntervalSinceReferenceDate / 14)
-                ZStack {
-                    (scheme == .dark ? Color(red: 0.045, green: 0.065, blue: 0.08) : Color(red: 0.975, green: 0.97, blue: 0.95))
-                    Ellipse().fill(Color.plateFat.opacity(scheme == .dark ? 0.13 : 0.10)).frame(width: 650, height: 650).blur(radius: 50).offset(x: geometry.size.width * 0.35, y: -geometry.size.height * 0.4 + phase * 25)
-                    Ellipse().fill(status.color.opacity(scheme == .dark ? 0.12 : 0.12)).frame(width: 600, height: 700).blur(radius: 65).offset(x: -geometry.size.width * 0.45, y: geometry.size.height * 0.20 - phase * 25)
-                    Circle().fill(Color.plateCarb.opacity(0.07)).frame(width: 400).blur(radius: 50).offset(x: geometry.size.width * 0.4, y: geometry.size.height * 0.45)
-                }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
-            }
+            ZStack {
+                (scheme == .dark ? Color(red: 0.045, green: 0.065, blue: 0.09) : Color(red: 0.976, green: 0.973, blue: 0.958))
+                Circle().fill(Color.plateFat.opacity(scheme == .dark ? 0.14 : 0.07)).frame(width: 640, height: 640).position(x: geometry.size.width + 40, y: 40)
+                Circle().fill(status.color.opacity(scheme == .dark ? 0.10 : 0.07)).frame(width: 540, height: 540).position(x: -100, y: geometry.size.height * 0.7)
+            }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
 }
@@ -95,11 +91,71 @@ struct SectionEyebrow: View {
 }
 
 struct PlatePress: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduced
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.scaleEffect(configuration.isPressed && !reduced ? 0.96 : 1)
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(reduced ? nil : .spring(response: 0.3, dampingFraction: 0.65), value: configuration.isPressed)
+        PlatePressContent(content: configuration.label, pressed: configuration.isPressed)
+    }
+}
+private struct PlatePressContent<Content: View>: View {
+    let content: Content
+    let pressed: Bool
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        content.scaleEffect(reduced ? 1 : pressed ? 0.965 : hovering ? 1.012 : 1)
+            .offset(y: hovering && !pressed && !reduced ? -2 : 0)
+            .brightness(hovering ? 0.025 : 0)
+            .animation(reduced ? nil : .spring(response: 0.32, dampingFraction: 0.68), value: pressed)
+            .animation(reduced ? nil : .spring(response: 0.4, dampingFraction: 0.7), value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+struct PlateIconTile: View {
+    let symbol: String
+    let tint: Color
+    var size: CGFloat = 42
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        Image(systemName: symbol).font(.system(size: size * 0.45, weight: .semibold)).foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: size * 0.31))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.31).stroke(.white.opacity(0.4), lineWidth: 0.8))
+            .shadow(color: tint.opacity(hovering ? 0.4 : 0.22), radius: hovering ? 13 : 7, y: 5)
+            .rotation3DEffect(.degrees(hovering && !reduced ? -12 : 0), axis: (x: 0.3, y: 1, z: 0))
+            .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.65), value: hovering)
+            .onHover { hovering = $0 }.accessibilityHidden(true)
+    }
+}
+struct PlateSculpture: View {
+    @State private var turned = false
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        Button { withAnimation(reduced ? nil : .spring(response: 0.7, dampingFraction: 0.45)) { turned.toggle() } } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 32).fill(Color.plateCarb.gradient).frame(width: 95, height: 108).rotationEffect(.degrees(turned ? 18 : -18)).offset(x: -12, y: -5)
+                RoundedRectangle(cornerRadius: 32).fill(LinearGradient(colors: [.white.opacity(0.96), Color.plateMint.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 95, height: 108).rotationEffect(.degrees(turned ? -20 : 13)).offset(x: 13, y: 5).shadow(color: .black.opacity(0.16), radius: 14, y: 10)
+                Image(systemName: "fork.knife").font(.system(size: 34, weight: .medium)).foregroundStyle(Color(red: 0.08, green: 0.32, blue: 0.25)).rotationEffect(.degrees(turned ? -20 : 13)).offset(x: 13, y: 5)
+                Image(systemName: "sparkle").font(.title3).foregroundStyle(Color.plateCarb).offset(x: turned ? -52 : 55, y: turned ? -48 : -42)
+            }.frame(width: 145, height: 145).rotation3DEffect(.degrees(reduced ? 0 : turned || hovering ? 12 : -7), axis: (x: 0.3, y: 1, z: 0))
+        }.buttonStyle(PlatePress()).onHover { value in withAnimation(reduced ? nil : .spring(response: 0.5)) { hovering = value } }
+            .accessibilityLabel("Play with the Plate illustration").accessibilityHint("Tilts the illustration without changing your food log")
+    }
+}
+struct PlateSegmentedControl: View {
+    let options: [String]
+    @Binding var selection: Int
+    @Namespace private var highlight
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(options.enumerated()), id: \.offset) { index, title in
+                Button { withAnimation(reduced ? nil : .spring(response: 0.35, dampingFraction: 0.8)) { selection = index } } label: {
+                    Text(title).font(.system(.caption, design: .rounded, weight: .bold)).frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background { if selection == index { Capsule().fill(Color.plateMint.opacity(0.20)).matchedGeometryEffect(id: "segment", in: highlight) } }
+                }.buttonStyle(PlatePress()).foregroundStyle(.primary).accessibilityAddTraits(selection == index ? .isSelected : [])
+            }
+        }.padding(4).background(.primary.opacity(0.045), in: .capsule).sensoryFeedback(.selection, trigger: selection)
     }
 }
 struct PlatePageTitle: View {
@@ -176,7 +232,7 @@ struct NutrientTile: View {
                 }.frame(height: 5)
                 if expanded { Text("\(Int(max(0,target-value))) g left\nTarget \(Int(target)) g").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).transition(.opacity.combined(with: .move(edge: .top))) }
             }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(tint.opacity(0.055), in: .rect(cornerRadius: 23)).overlay(RoundedRectangle(cornerRadius: 23).stroke(tint.opacity(0.12)))
-        }.buttonStyle(PlatePress()).accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams").accessibilityHint("Show remaining grams")
+        }.buttonStyle(PlatePress()).sensoryFeedback(.selection, trigger: expanded).accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams").accessibilityHint("Show remaining grams")
     }
 }
 

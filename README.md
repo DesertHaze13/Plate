@@ -2,7 +2,7 @@
 
 A native SwiftUI food and nutrition tracker for iPhone, iPad, and Mac.
 
-Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its interface includes an interactive energy display, expandable macro tiles, a custom calendar, charts, and adaptive layouts for each platform.
+Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its interface includes a draggable glass navigation bar, dimensional illustrations, an expandable energy-and-macro hero, switchable nutrition stories, a custom calendar, charts, and adaptive layouts for each platform.
 
 ## Features
 
@@ -65,4 +65,6 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 6.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 8.
+
+See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.

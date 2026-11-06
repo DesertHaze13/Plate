@@ -40,8 +40,8 @@ struct ProfileFields: View {
     @Binding var metric: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Picker("Goal", selection: $profile.goal) { Text("Lean bulk").tag(Goal.leanBulk); Text("Recomp").tag(Goal.recomp); Text("Cut").tag(Goal.cut) }.pickerStyle(.segmented)
-            Picker("Units", selection: $metric) { Text("Metric").tag(true); Text("Imperial").tag(false) }.pickerStyle(.segmented)
+            PlateSegmentedControl(options: ["Lean bulk", "Recomp", "Cut"], selection: Binding(get: { [Goal.leanBulk, .recomp, .cut].firstIndex(of: profile.goal) ?? 0 }, set: { profile.goal = [Goal.leanBulk, .recomp, .cut][$0] })).accessibilityLabel("Goal")
+            PlateSegmentedControl(options: ["Metric", "Imperial"], selection: Binding(get: { metric ? 0 : 1 }, set: { metric = $0 == 0 })).accessibilityLabel("Units")
             HStack { Text("Age"); Spacer(); TextField("Years", value: $profile.age, format: .number).multilineTextAlignment(.trailing).frame(width: 100); Text("years").font(.caption).foregroundStyle(.secondary) }
             Picker("Sex for BMR calculation", selection: $profile.male) { Text("Male").tag(true); Text("Female").tag(false) }
             HStack { Text("Height"); Spacer(); TextField("Height", value: Binding(get: { metric ? profile.heightCM : profile.heightCM/2.54 }, set: { profile.heightCM = metric ? $0 : $0*2.54 }), format: .number.precision(.fractionLength(0...1))).multilineTextAlignment(.trailing).frame(width: 100); Text(metric ? "cm" : "in").font(.caption).foregroundStyle(.secondary) }
