@@ -11,18 +11,27 @@ import Observation
     private init() { if let data = try? Data(contentsOf: file) { pending = (try? JSONDecoder().decode([Pending].self, from: data)) ?? [] } }
     func enqueue(uid: String, mealID: String) throws {
         let value = Pending(uid: uid, mealID: mealID)
-        if !pending.contains(value) { pending.append(value) }
-        try persist()
+        if !pending.contains(value) {
+            pending.append(value)
+            do { try persist() } catch { pending.removeAll { $0 == value }; throw error }
+        }
     }
-    func remove(mealID: String) { pending.removeAll { $0.mealID == mealID }; try? persist() }
+    func remove(mealID: String) {
+        pending.removeAll { $0.mealID == mealID }; try? persist()
+        PhotoStore.shared.removePending(mealID: mealID)
+    }
     func flush(sync: FirebaseSync) async {
         guard !flushing, let uid = sync.userID else { return }; flushing = true; defer { flushing = false }
         for row in pending.filter({ $0.uid == uid }) {
             guard sync.userID == uid else { break }
             guard let photo = PhotoStore.shared.read("\(row.mealID).jpg"), let thumbnail = PhotoStore.shared.read("\(row.mealID)-thumb.jpg") else { continue }
             do {
-                _ = try await sync.uploadPhoto(mealID: row.mealID, jpeg: photo, thumbnail: thumbnail)
-                pending.removeAll { $0 == row }; try persist()
+                let paths = try await sync.uploadPhoto(mealID: row.mealID, jpeg: photo, thumbnail: thumbnail)
+                // Only a completed server upload permits removal of the offline originals.
+                pending.removeAll { $0 == row }
+                do { try persist() } catch { if !pending.contains(row) { pending.append(row) }; throw error }
+                PhotoStore.shared.removePending(mealID: row.mealID)
+                PhotoStore.shared.removeLegacyCopies(paths: [paths.0, paths.1])
             } catch { break } // Persisted work retries when the app reconnects or becomes active.
         }
     }

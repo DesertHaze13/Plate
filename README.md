@@ -2,18 +2,18 @@
 
 A native SwiftUI food and nutrition tracker for iPhone, iPad, and Mac.
 
-Plate combines food photos, descriptions, nutrition-label OCR, editable AI reviews and daily nutrition tracking. Its playful identity includes original animated food characters, draggable stickers, tap bursts, a moving type strip, spring interactions and an interactive macro pie. Native Liquid Glass navigation remains part of the Apple platform experience.
+Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its interface includes a draggable glass navigation bar, dimensional illustrations, an expandable energy-and-macro hero, switchable nutrition stories, a custom calendar, charts, and adaptive layouts for each platform.
 
 ## Features
 
 - Food photos, nutrition labels, barcode matching, image imports, and manual entry.
 - On-device Vision OCR, English and Indonesian label parsing, serving-size calculations, and optional AI recognition.
-- Review and edit every food item before logging it.
-- Daily calorie, protein, carbohydrate, and fat targets, with optional training-day targets. Independent almost-full/met/over warnings show what remains, including projected totals before saving a meal.
-- Meal history, saved foods, repeat meals, weight tracking, and progress charts. Interactive macro/food-category pie charts show each slice’s totals and contributing foods.
+- Review and edit every food item before logging it; correct individual foods with AI descriptions and optional reference photos, including meals already logged.
+- Daily calorie, protein, carbohydrate, and fat targets, with optional training-day targets.
+- Meal history with daily calorie comparisons, saved foods, repeat meals, weight tracking, and progress charts.
 - Google sign-in and private Firestore synchronization, with offline caches and a photo-upload outbox.
 - Optional Apple Health integration, widgets, capture control, Siri shortcuts, and a Mac menu-bar glance.
-- Light/dark appearance, reduced-motion support, and accessible control descriptions.
+- Separate System/Light/Dark appearance settings, a floating capture dock, prominent calorie/macro over-target warnings, reduced-motion support, and accessible control descriptions.
 
 ## Requirements
 
@@ -65,24 +65,6 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 16.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 19.
 
-See [the UI comparison](Documentation/UI_COMPARISON.md) for the earlier interaction update and Google sign-in crash fix (historical). Build 15 replaces that visual direction with Plate’s own identity.
-
-On iPhone, native system tabs provide the selection lens and touch tracking. On iOS 27, the camera uses the prominent tab role; Settings is accessible from the top toolbar. The custom simulated tab selector has been removed.
-
-See [target warnings](Documentation/TARGET_WARNINGS.md) for thresholds, calorie tolerance, macro states, and meal-preview behavior.
-
-See [the pie explorer](Documentation/PIE_EXPLORER.md) for selectable slices, calorie-share calculations and food drill-down.
-
-Today uses a fully clear title-bar background, with the top scroll-edge blur disabled.
-
-Food photos now use full `gemini-3.5-flash` with a thinking budget before on-device fallback when cloud recognition is allowed. Legacy Flash Lite preferences migrate automatically; custom model overrides remain supported. Indonesian cuisine instructions encourage separate visible sides and descriptive names when a recipe cannot be distinguished. Low-confidence names must be confirmed before saving. Printed nutrition labels still take priority, and cloud opt-out is preserved.
-
-Today’s warning banner is in Indonesian, reports the exact remaining or excess amount for each target, and stays visible while scrolling when a target has been exceeded. The thin macro ring supports slice selection, accessible macro buttons, animated values and a food/category detail sheet. Motion follows Reduce Motion.
-
-The Today title opens a date picker, and a seven-day strip lets you revisit previous records. Selecting a day updates meals, totals, the macro hero, warnings and summaries together. Return to Today resumes the live day, including midnight rollover. Historical comparisons use currently configured targets and the selected date’s stored training-day flag. Browsing dates never changes meal timestamps or today’s training flag.
-
-See [Plate’s visual identity](Documentation/PLATE_IDENTITY.md) for the original build 16 design.
-
-Build 16 adds an explicit photo + description composer and **Edit with AI** on each draft or logged food. AI edits are previews; applying updates that food’s draft, and saving a logged meal is explicit. Cancel preserves the stored record. Results identify when the optional Flash Lite fallback was used after provider quota/capacity errors. See [photo and AI editing](Documentation/PHOTO_AND_AI_EDITING.md).
+See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.

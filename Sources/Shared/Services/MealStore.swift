@@ -30,8 +30,9 @@ struct AccountState: Codable {
         clock = .now
         if changedDay { publishWidget() }
     }
-    var targets: Targets { get { account.targets } set { account.targets = newValue } }
-    var effectiveTargets: Targets { trainingToday ? account.settings.trainingDayTargets ?? targets : targets }
+    var targets: Targets { get { account.targets.capped(at: account.profile.dailyCalorieCeiling) } set { account.targets = newValue.capped(at: account.profile.dailyCalorieCeiling) } }
+    /// Today's targets, never above the calorie ceiling set in the profile.
+    var effectiveTargets: Targets { (trainingToday ? account.settings.trainingDayTargets ?? targets : targets).capped(at: account.profile.dailyCalorieCeiling) }
     private let directory: URL
     init(directory: URL? = nil) {
         self.directory = directory ?? URL.applicationSupportDirectory.appending(path: "Plate", directoryHint: .isDirectory)

@@ -3,21 +3,21 @@
     {
       "value": {
         "linear-gradient": [
-          "extended-srgb:0.18,0.25,0.86,1",
-          "extended-srgb:0.13,0.18,0.67,1"
+          "extended-srgb:0.14,0.37,0.28,1",
+          "extended-srgb:0.05,0.16,0.12,1"
         ]
       }
     },
     {
       "appearance": "dark",
       "value": {
-        "automatic-gradient": "extended-srgb:0.10,0.14,0.50,1"
+        "automatic-gradient": "extended-srgb:0.03,0.12,0.09,1"
       }
     }
   ],
   "groups": [
     {
-      "name": "Paper plate",
+      "name": "Porcelain plate",
       "lighting": "individual",
       "shadow": {
         "kind": "neutral",
@@ -39,7 +39,7 @@
       ]
     },
     {
-      "name": "Plate signature",
+      "name": "Glass macro ring",
       "lighting": "individual",
       "specular": true,
       "translucency": {
@@ -61,7 +61,7 @@
         },
         {
           "image-name": "leaf.svg",
-          "name": "Plate P mark",
+          "name": "Nourishment",
           "glass": false,
           "position": {
             "scale": 1,

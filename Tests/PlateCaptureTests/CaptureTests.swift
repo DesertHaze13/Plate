@@ -45,31 +45,51 @@ final class CaptureTests: XCTestCase {
         do { _ = try await RecognitionService().analyze(data: Data([0, 1, 2]), cloudAllowed: false); XCTFail("Malformed image should fail") }
         catch { /* Expected: no guessed nutrition and no cloud fallback. */ }
     }
-    func testEmptyDescriptionNeverStartsAIGeneration() async {
-        do { _ = try await RecognitionService().analyze(data: nil, description: "  ", cloudAllowed: true); XCTFail("Empty input must fail before AI") }
-        catch RecognitionError.noFoods { }
-        catch { XCTFail("Unexpected error: \(error)") }
+    @MainActor func testPhotoQueueDoesNotEvictPendingOriginals() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoStore(root: root)
+        let photo = EncodedPhoto(full: Data(repeating: 1, count: 12 * 1024 * 1024), thumbnail: Data([2]))
+        try store.stage(photo, mealID: "first")
+        XCTAssertThrowsError(try store.stage(photo, mealID: "second"))
+        XCTAssertEqual(store.read("first.jpg"), photo.full)
+        XCTAssertNil(store.read("second.jpg"))
+        try store.save(Data([3]), key: "remote-old-copy")
+        store.clearDownloadedCache()
+        XCTAssertNil(store.read("remote-old-copy"))
+        XCTAssertEqual(store.read("first.jpg"), photo.full)
+        store.removePending(mealID: "first")
+        XCTAssertNil(store.read("first.jpg"))
+        XCTAssertNil(store.read("first-thumb.jpg"))
+        XCTAssertThrowsError(try store.stage(photo, mealID: "../outside"))
     }
-    func testEmptySingleFoodCorrectionNeverStartsAIGeneration() async {
-        let item = FoodItem(name: "Tempe", category: .protein, servingDescription: "100 g", nutrients: .init(calories: 200))
-        do { _ = try await RecognitionService().refine(item: item, instruction: " ", imageData: nil, cloudAllowed: true); XCTFail("Empty correction must fail") }
-        catch RecognitionError.noFoods { }
-        catch { XCTFail("Unexpected error: \(error)") }
+    func testExclusionMasksUseTopLeftCoordinates() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        let image = try XCTUnwrap(context.makeImage())
+        let bytes = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil); XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let masked = try ImageCodec.masking(bytes as Data, regions: [.init(x: 0, y: 0, width: 0.5, height: 0.5)])
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(masked as CFData, nil))
+        let result = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        func pixel(_ x: Int, _ y: Int) throws -> UInt8 {
+            let crop = try XCTUnwrap(result.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+            let sample = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            sample.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return try XCTUnwrap(sample.data).load(as: UInt8.self)
+        }
+        XCTAssertLessThan(try pixel(25, 25), 10)
+        XCTAssertGreaterThan(try pixel(25, 75), 240)
+        XCTAssertGreaterThan(try pixel(75, 25), 240)
+        XCTAssertEqual(try ImageCodec.masking(bytes as Data, regions: []), bytes as Data)
     }
 
-    func testAIDeadlineReturnsWithoutWaitingForLateSDKCallback() async {
-        let clock = ContinuousClock(); let start = clock.now
+    func testDescriptionRejectsUnreadableReferencePhotoBeforeAI() async {
         do {
-            let _: Int = try await RecognitionDeadline.run(seconds: 0.03) { try? await Task.sleep(for: .seconds(2)); return 9 }
-            XCTFail("Expected timeout")
-        } catch RecognitionError.timedOut { XCTAssertLessThan(start.duration(to: clock.now), .seconds(1)) }
-        catch { XCTFail("Unexpected error: \(error)") }
-    }
-    func testAIDeadlinePropagatesCancellation() async {
-        let task = Task { try await RecognitionDeadline.run(seconds: 2) { try await Task.sleep(for: .seconds(5)); return 3 } }
-        task.cancel()
-        do { _ = try await task.value; XCTFail("Expected cancellation") }
-        catch is CancellationError { }
+            _ = try await RecognitionService().describe("Grilled chicken, 120 g", photo: Data([0, 1, 2]), correcting: nil, cloudAllowed: false)
+            XCTFail("An attached reference photo must be decoded before estimating")
+        } catch RecognitionError.unreadable { }
         catch { XCTFail("Unexpected error: \(error)") }
     }
 

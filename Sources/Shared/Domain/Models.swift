@@ -2,18 +2,26 @@ import Foundation
 
 public struct Nutrients: Codable, Equatable, Sendable {
     public var calories, protein, carbs, fat, fiber, sugar: Double
-    public init(calories: Double = 0, protein: Double = 0, carbs: Double = 0, fat: Double = 0, fiber: Double = 0, sugar: Double = 0) {
+    /// Milligrams. Meals saved before caffeine tracking decode with 0.
+    public var caffeine: Double
+    public init(calories: Double = 0, protein: Double = 0, carbs: Double = 0, fat: Double = 0, fiber: Double = 0, sugar: Double = 0, caffeine: Double = 0) {
         self.calories = calories; self.protein = protein; self.carbs = carbs
-        self.fat = fat; self.fiber = fiber; self.sugar = sugar
+        self.fat = fat; self.fiber = fiber; self.sugar = sugar; self.caffeine = caffeine
+    }
+    private enum CodingKeys: String, CodingKey { case calories, protein, carbs, fat, fiber, sugar, caffeine }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value(_ key: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: key) ?? 0 }
+        self.init(calories: try value(.calories), protein: try value(.protein), carbs: try value(.carbs), fat: try value(.fat), fiber: try value(.fiber), sugar: try value(.sugar), caffeine: try value(.caffeine))
     }
     public static let zero = Nutrients()
     public static func + (a: Self, b: Self) -> Self {
-        .init(calories: a.calories+b.calories, protein: a.protein+b.protein, carbs: a.carbs+b.carbs, fat: a.fat+b.fat, fiber: a.fiber+b.fiber, sugar: a.sugar+b.sugar)
+        .init(calories: a.calories+b.calories, protein: a.protein+b.protein, carbs: a.carbs+b.carbs, fat: a.fat+b.fat, fiber: a.fiber+b.fiber, sugar: a.sugar+b.sugar, caffeine: a.caffeine+b.caffeine)
     }
     public func scaled(by n: Double) -> Self {
-        .init(calories: calories*n, protein: protein*n, carbs: carbs*n, fat: fat*n, fiber: fiber*n, sugar: sugar*n)
+        .init(calories: calories*n, protein: protein*n, carbs: carbs*n, fat: fat*n, fiber: fiber*n, sugar: sugar*n, caffeine: caffeine*n)
     }
-    public var isValid: Bool { [calories, protein, carbs, fat, fiber, sugar].allSatisfy { $0.isFinite && $0 >= 0 } }
+    public var isValid: Bool { [calories, protein, carbs, fat, fiber, sugar, caffeine].allSatisfy { $0.isFinite && $0 >= 0 } }
 }
 public enum FoodCategory: String, Codable, CaseIterable, Sendable { case protein, carbs, fats, vegetables, fruit, dairy, drinks, snacks, sauces }
 public enum MealSource: String, Codable, Sendable { case appleIntelligence, cloud, manual, barcode, label }
@@ -34,7 +42,6 @@ public struct FoodItem: Identifiable, Codable, Equatable, Sendable {
     public var bounds: FoodBounds?
     public var needsReviewFields: [String]?
     public var confidence: Double?
-    public var aiModel: String?
     public var source: MealSource
     public var total: Nutrients { nutrients.scaled(by: quantity) }
     public init(name: String, category: FoodCategory, servingDescription: String, nutrients: Nutrients, quantity: Double = 1, confidence: Double? = nil, source: MealSource = .manual) {
@@ -68,7 +75,7 @@ public enum DayKey {
     }
 }
 public enum Goal: String, Codable, CaseIterable, Sendable { case leanBulk, recomp, cut }
-public struct Profile: Codable, Sendable {
+public struct Profile: Codable, Equatable, Sendable {
     public var age: Int = 30
     public var male: Bool = true
     public var heightCM: Double = 175
@@ -76,6 +83,14 @@ public struct Profile: Codable, Sendable {
     public var activityMultiplier: Double = 1.55
     public var trainingDays: Int = 4
     public var goal: Goal = .recomp
+    /// User-editable maximum; older profiles without a value use the 2,200 kcal ceiling.
+    public var calorieCap: Double? = 2200
+    public var dailyCalorieCeiling: Double {
+        guard let cap = calorieCap, cap.isFinite, cap > 0 else { return 2200 }
+        return cap
+    }
+    /// Average daily active energy from Apple Health (last 14 days). When set it replaces the activity multiplier.
+    public var measuredActiveKcal: Double?
     public init() {}
 }
 public struct Targets: Codable, Equatable, Sendable {
@@ -105,13 +120,51 @@ public struct AppSettings: Codable, Sendable {
     public var trainingDayKeys: [String]?
     public init() {}
 }
+/// Every step of the calorie target, so the app can show its working.
+public struct EnergyBreakdown: Equatable, Sendable {
+    public let bmr: Double
+    public let maintenance: Double
+    public let goalChange: Double
+    public let goalCalories: Double
+    public let calories: Double
+    public let usesMeasuredActivity: Bool
+    public var capped: Bool { calories < goalCalories }
+}
 public enum NutritionCalculator {
+    /// Fraction added to (or taken from) maintenance for each goal.
+    public static func goalChange(_ goal: Goal) -> Double {
+        switch goal { case .leanBulk: 0.10; case .recomp: -0.10; case .cut: -0.20 }
+    }
+    public static func bmr(for p: Profile) -> Double {
+        10*p.weightKG + 6.25*p.heightCM - 5*Double(p.age) + (p.male ? 5 : -161)
+    }
+    public static func breakdown(for p: Profile) -> EnergyBreakdown {
+        let resting = Self.bmr(for: p)
+        let measured = p.measuredActiveKcal.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        // Measured: resting burn + what Apple Health saw you burn. Otherwise the activity multiplier, which already includes training.
+        let maintenance = max(0, measured.map { resting + $0 } ?? resting * p.activityMultiplier)
+        let change = goalChange(p.goal)
+        let goalCalories = maintenance * (1 + change)
+        var calories = goalCalories
+        calories = min(calories, p.dailyCalorieCeiling)
+        return EnergyBreakdown(bmr: resting, maintenance: maintenance, goalChange: change, goalCalories: goalCalories, calories: calories, usesMeasuredActivity: measured != nil)
+    }
     public static func targets(for p: Profile) -> Targets {
-        let bmr = 10*p.weightKG + 6.25*p.heightCM - 5*Double(p.age) + (p.male ? 5 : -161)
-        let adjustment = p.goal == .leanBulk ? 1.10 : p.goal == .cut ? 0.825 : 1
-        let kcal = max(0, bmr * p.activityMultiplier * adjustment)
+        let kcal = max(0, breakdown(for: p).calories)
         let protein = p.weightKG * 2
         let fat = kcal * 0.25 / 9
         return Targets(nutrients: .init(calories: kcal, protein: protein, carbs: max(0, (kcal-protein*4-fat*9)/4), fat: fat))
+    }
+}
+extension Targets {
+    /// Keeps calories at or under the ceiling, trimming carbs first, then fat. Protein is never trimmed.
+    public func capped(at cap: Double?) -> Targets {
+        guard let cap, cap > 0, cap.isFinite, nutrients.calories > cap else { return self }
+        var result = self
+        var excess = nutrients.calories - cap
+        let carbCut = min(result.nutrients.carbs, excess/4); result.nutrients.carbs -= carbCut; excess -= carbCut*4
+        let fatCut = min(result.nutrients.fat, excess/9); result.nutrients.fat -= fatCut
+        result.nutrients.calories = cap
+        return result
     }
 }

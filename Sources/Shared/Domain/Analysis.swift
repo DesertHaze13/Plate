@@ -53,9 +53,6 @@ public struct DailyGuidance: Sendable {
     }
 }
 public enum HistoryMath {
-    public static func targets(on date: Date, rest: Targets, training: Targets?, trainingDayKeys: [String], calendar: Calendar = .current) -> Targets {
-        trainingDayKeys.contains(DayKey.make(date, calendar: calendar)) ? training ?? rest : rest
-    }
     public static func totals(_ meals: [Meal], on date: Date, calendar: Calendar = .current) -> Nutrients {
         meals.filter { calendar.isDate($0.timestamp, inSameDayAs: date) }.reduce(.zero) { $0 + $1.total }
     }
@@ -72,121 +69,67 @@ public enum HistoryMath {
     }
 }
 
-public enum TrackedNutrient: String, CaseIterable, Identifiable, Sendable {
-    case calories, protein, carbs, fat
-    public var id: String { rawValue }
-    public var title: String { switch self { case .calories: "Calories"; case .protein: "Protein"; case .carbs: "Carbs"; case .fat: "Fat" } }
-    public var unit: String { self == .calories ? "kcal" : "g" }
-    public func amount(in nutrients: Nutrients) -> Double {
-        switch self { case .calories: nutrients.calories; case .protein: nutrients.protein; case .carbs: nutrients.carbs; case .fat: nutrients.fat }
+/// Typical caffeine per serving, used when a food has no caffeine value of its own.
+public enum CaffeineEstimate {
+    private static let table: [(words: [String], mg: Double)] = [
+        (["decaf", "decaffeinated"], 3),
+        (["matcha"], 70),
+        (["cold brew"], 200),
+        (["doppio", "double espresso", "double shot"], 128),
+        (["espresso", "ristretto"], 64),
+        (["coffee", "kopi", "latte", "cappuccino", "flat white", "americano", "mocha", "macchiato", "cortado", "affogato", "kape"], 95),
+        (["monster"], 160),
+        (["red bull", "energy drink", "kratingdaeng"], 80),
+        (["tea", "teh", "chai", "oolong"], 47),
+        (["cola", "coke", "pepsi"], 34)
+    ]
+    private static let coffeeWords = ["coffee", "kopi", "latte", "cappuccino", "flat white", "americano", "mocha", "macchiato", "cortado", "affogato", "kape", "espresso", "ristretto", "doppio", "cold brew", "decaf"]
+    private static func normalized(_ name: String) -> String {
+        " " + String(name.lowercased().map { $0.isLetter ? $0 : " " }).split(separator: " ").joined(separator: " ") + " "
     }
-}
-public enum TargetFillState: String, Equatable, Sendable { case under, near, met, over, unset }
-/// Derived from the selected day's totals and targets; never changes food data or goals.
-public struct TargetProgress: Identifiable, Equatable, Sendable {
-    public let nutrient: TrackedNutrient
-    public let amount: Double
-    public let target: Double
-    public let state: TargetFillState
-    public var id: TrackedNutrient { nutrient }
-    public var remaining: Double { max(0, target - amount) }
-    public var excess: Double { max(0, amount - target) }
-    public var fraction: Double { target > 0 ? amount / target : 0 }
-    public init(nutrient: TrackedNutrient, amount: Double, target: Double, warningFraction: Double = 0.85, tolerance: Double = 0) {
-        self.nutrient = nutrient
-        self.amount = amount.isFinite && amount >= 0 ? amount : 0
-        self.target = target.isFinite && target > 0 ? target : 0
-        guard amount.isFinite, amount >= 0, target.isFinite, target > 0 else { state = .unset; return }
-        let tolerance = tolerance.isFinite ? max(0, tolerance) : 0
-        let threshold = warningFraction.isFinite ? min(1, max(0.5, warningFraction)) : 0.85
-        if amount > target + tolerance { state = .over }
-        else if abs(amount - target) <= tolerance { state = .met }
-        else if amount / target >= threshold { state = .near }
-        else { state = .under }
+    /// Milligrams per serving, or nil when the name doesn't look like a caffeinated drink.
+    public static func perServing(name: String) -> Double? {
+        let text = normalized(name)
+        return table.first { entry in entry.words.contains { word in text.contains(" \(word) ") } }?.mg
     }
-    public static func all(eaten: Nutrients, targets: Targets) -> [TargetProgress] {
-        TrackedNutrient.allCases.map { nutrient in
-            TargetProgress(nutrient: nutrient, amount: nutrient.amount(in: eaten), target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction, tolerance: nutrient == .calories ? targets.tolerance : 0)
-        }
+    public static func isCoffee(_ name: String) -> Bool {
+        let text = normalized(name)
+        return coffeeWords.contains { word in text.contains(" \(word) ") }
+    }
+    /// The item's own caffeine when entered, otherwise the typical amount for its name.
+    public static func milligrams(for item: FoodItem) -> Double {
+        item.nutrients.caffeine > 0 ? item.total.caffeine : (perServing(name: item.name) ?? 0) * item.quantity
     }
 }
 
-public struct PlatePieSlice: Identifiable, Equatable, Sendable {
+/// Applies a reviewed AI proposal without touching unrelated foods or resurrecting a removed item.
+public enum FoodReview {
+    public static func applying(_ proposal: [FoodItem], replacing id: String?, to foods: [FoodItem]) -> [FoodItem] {
+        guard !proposal.isEmpty else { return foods }
+        guard let id else { return foods + proposal }
+        guard let index = foods.firstIndex(where: { $0.id == id }) else { return foods }
+        var result = foods; result.replaceSubrange(index...index, with: proposal)
+        return result
+    }
+}
+
+/// Budget overages are independent: a macro can exceed its target while calories are still below theirs.
+public struct NutritionOverage: Identifiable, Equatable, Sendable {
     public let id: String
-    public let title: String
-    public let calories: Double
-    public let grams: Double?
-    public let nutrient: TrackedNutrient?
-    public let category: FoodCategory?
-}
-public enum PieBreakdown {
-    private static func safe(_ number: Double) -> Double { number.isFinite && number > 0 ? number : 0 }
-    public static func macros(_ nutrients: Nutrients) -> [PlatePieSlice] {
-        [TrackedNutrient.protein, .carbs, .fat].map { nutrient in
-            let grams = safe(nutrient.amount(in: nutrients))
-            return PlatePieSlice(id: "macro/\(nutrient.rawValue)", title: nutrient.title, calories: grams * (nutrient == .fat ? 9 : 4), grams: grams, nutrient: nutrient, category: nil)
+    public let name: String
+    public let unit: String
+    public let consumed: Double
+    public let target: Double
+    public var excess: Double { consumed - target }
+    public static func evaluate(eaten: Nutrients, target: Nutrients) -> [NutritionOverage] {
+        let fields: [(String, String, String, KeyPath<Nutrients, Double>)] = [
+            ("calories", "Calories", "kcal", \.calories), ("protein", "Protein", "g", \.protein),
+            ("carbs", "Carbs", "g", \.carbs), ("fat", "Fat", "g", \.fat)
+        ]
+        return fields.compactMap { id, name, unit, path in
+            let value = eaten[keyPath: path], goal = target[keyPath: path]
+            guard value.isFinite, goal.isFinite, goal > 0, value > goal else { return nil }
+            return NutritionOverage(id: id, name: name, unit: unit, consumed: value, target: goal)
         }
-    }
-    public static func foodCategories(_ meals: [Meal]) -> [PlatePieSlice] {
-        FoodCategory.allCases.compactMap { category in
-            let calories = meals.flatMap(\.items).filter { $0.category == category }.reduce(0) { $0 + safe($1.total.calories) }
-            guard calories > 0 else { return nil }
-            return PlatePieSlice(id: "food/\(category.rawValue)", title: category.rawValue.capitalized, calories: calories, grams: nil, nutrient: nil, category: category)
-        }
-    }
-    /// Charts reports cumulative energy, not degrees. Zero-size sectors have no hit area.
-    public static func slice(at energy: Double, in slices: [PlatePieSlice]) -> PlatePieSlice? {
-        let visible = slices.filter { $0.calories.isFinite && $0.calories > 0 }
-        let total = visible.reduce(0) { $0 + $1.calories }
-        guard energy.isFinite, energy >= 0, total > 0, energy <= total else { return nil }
-        var edge = 0.0
-        for slice in visible {
-            edge += slice.calories
-            if energy < edge { return slice }
-        }
-        return visible.last
-    }
-}
-
-
-public enum RecognitionModel {
-    public static let advanced = "gemini-3.5-flash"
-    public static let fallback = "gemini-3.5-flash-lite"
-    public static func candidates(primary: String, allowFallback: Bool) -> [String] {
-        var names = ["gemini-3.8-flash", "gemini-3.6-flash"].contains(primary) ? [primary, advanced] : [primary]
-        if allowFallback, !names.contains(fallback) { names.append(fallback) }
-        return names
-    }
-    public static func allowsFallback(statusCode: Int) -> Bool { statusCode == 429 || statusCode == 503 }
-    public static func modelName(configured: String?) -> String {
-        let name = configured?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty || name == "gemini-3.5-flash-lite" ? advanced : name
-    }
-}
-public extension TrackedNutrient {
-    var indonesianTitle: String {
-        switch self { case .calories: "Kalori"; case .protein: "Protein"; case .carbs: "Karbohidrat"; case .fat: "Lemak" }
-    }
-}
-public extension TargetProgress {
-    var indonesianDifference: String {
-        let value = state == .over ? excess : remaining
-        let formatted = value > 0 && value < 0.1 ? "kurang dari 0,1" : value.formatted(.number.locale(Locale(identifier: "id_ID")).precision(.fractionLength(0...1)))
-        switch state {
-        case .over: return "Lebih \(formatted) \(nutrient.unit)"
-        case .under, .near: return "Sisa \(formatted) \(nutrient.unit)"
-        case .met: return "Target tercapai"
-        case .unset: return "Atur target dahulu"
-        }
-    }
-}
-
-/// A single-food AI edit retains record identity; siblings and meal metadata are not part of this operation.
-public enum FoodAIRevision {
-    public static func applying(_ proposal: FoodItem, to original: FoodItem) -> FoodItem {
-        var updated = proposal
-        updated.id = original.id
-        updated.bounds = original.bounds
-        return updated
     }
 }
