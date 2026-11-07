@@ -18,4 +18,26 @@ final class RecognitionUpgradeTests: XCTestCase {
     func testIndonesianWarningNeverRoundsTinyExcessToZero() {
         XCTAssertEqual(TargetProgress(nutrient: .fat, amount: 60.01, target: 60).indonesianDifference, "Lebih kurang dari 0,1 g")
     }
+    func testHistoricalDayTotalsUseJakartaBoundaryAndServingQuantity() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Jakarta")!
+        let beforeMidnight = ISO8601DateFormatter().date(from: "2026-11-05T16:59:00Z")!
+        let afterMidnight = ISO8601DateFormatter().date(from: "2026-11-05T17:01:00Z")!
+        let food = FoodItem(name: "Tempe", category: .protein, servingDescription: "100 g", nutrients: .init(calories: 200, protein: 20), quantity: 1.5)
+        let records = [Meal(timestamp: beforeMidnight, items: [food], calendar: calendar), Meal(timestamp: afterMidnight, items: [food], calendar: calendar)]
+        XCTAssertEqual(HistoryMath.totals(records, on: beforeMidnight, calendar: calendar).calories, 300)
+        XCTAssertEqual(HistoryMath.totals(records, on: afterMidnight, calendar: calendar).protein, 30)
+        XCTAssertEqual(records.count, 2)
+    }
+    func testSelectedDateResolvesItsTrainingTargetWithoutChangingToday() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Jakarta")!
+        let date = ISO8601DateFormatter().date(from: "2026-11-05T17:01:00Z")!
+        let rest = Targets(nutrients: .init(calories: 2000))
+        var training = rest; training.nutrients.calories = 2400
+        let key = DayKey.make(date, calendar: calendar)
+        XCTAssertEqual(HistoryMath.targets(on: date, rest: rest, training: training, trainingDayKeys: [key], calendar: calendar).nutrients.calories, 2400)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: date)!
+        XCTAssertEqual(HistoryMath.targets(on: yesterday, rest: rest, training: training, trainingDayKeys: [key], calendar: calendar).nutrients.calories, 2000)
+        XCTAssertEqual(HistoryMath.targets(on: date, rest: rest, training: nil, trainingDayKeys: [key], calendar: calendar).nutrients.calories, 2000)
+    }
+
 }

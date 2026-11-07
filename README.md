@@ -65,7 +65,7 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 13.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 14.
 
 See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.
 
@@ -80,3 +80,5 @@ Today uses a fully clear title-bar background, with the top scroll-edge blur dis
 Food photos now use full `gemini-3.5-flash` with a thinking budget before on-device fallback when cloud recognition is allowed. Legacy Flash Lite preferences migrate automatically; custom model overrides remain supported. Indonesian cuisine instructions encourage separate visible sides and descriptive names when a recipe cannot be distinguished. Low-confidence names must be confirmed before saving. Printed nutrition labels still take priority, and cloud opt-out is preserved.
 
 Today’s warning banner is in Indonesian, reports the exact remaining or excess amount for each target, and stays visible while scrolling when a target has been exceeded. The thin macro ring supports slice selection, accessible macro buttons, animated values and a food/category detail sheet. Motion follows Reduce Motion.
+
+The Today title opens a date picker, and a seven-day strip lets you revisit previous records. Selecting a day updates meals, totals, the macro hero, warnings and summaries together. Return to Today resumes the live day, including midnight rollover. Historical comparisons use currently configured targets and the selected date’s stored training-day flag. Browsing dates never changes meal timestamps or today’s training flag.

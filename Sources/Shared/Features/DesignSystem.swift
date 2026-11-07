@@ -304,7 +304,7 @@ struct TargetWarningStrip: View {
                 Image(systemName: over ? "exclamationmark.triangle.fill" : "exclamationmark.circle.fill")
                     .font(.title2).scaleEffect(pulse ? 1.12 : 1)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(over ? "Perhatian, asupan melewati target" : "Perhatikan target hari ini").font(.system(.subheadline, design: .rounded, weight: .bold))
+                    Text(over ? "Perhatian, asupan melewati target" : "Perhatikan target harian").font(.system(.subheadline, design: .rounded, weight: .bold))
                     ForEach(compact ? flagged.filter { $0.state == .over } : flagged) { item in
                         Text("\(item.nutrient.indonesianTitle) · \(item.indonesianDifference)").font(.caption.weight(.semibold))
                     }
@@ -488,6 +488,8 @@ struct PlatePieExplorer: View {
 struct SlimPlateHero: View {
     let meals: [Meal]
     let targets: Targets
+    var dayTitle = "TODAY"
+    var energyTitle = "Energi hari ini"
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var angle: Double?
@@ -504,7 +506,7 @@ struct SlimPlateHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("TODAY / YOUR PLATE").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
+                Text("\(dayTitle) / YOUR PLATE").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
                 Spacer()
                 Button { showDetails = true } label: { Image(systemName: "arrow.up.right").font(.subheadline.bold()).frame(width: 36, height: 36).background(.white.opacity(0.1), in: .circle) }.buttonStyle(PlatePress()).accessibilityLabel("Lihat rincian makanan dan kategori")
             }
@@ -558,7 +560,7 @@ struct SlimPlateHero: View {
     }
     private var readout: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(selected?.nutrient?.indonesianTitle ?? "Energi hari ini").font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.65))
+            Text(selected?.nutrient?.indonesianTitle ?? energyTitle).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.65))
             Text(selected.map { "\(($0.grams ?? 0).formatted(.number.precision(.fractionLength(0...1)))) g" } ?? "\(Int(totals.calories))").font(.system(size: 35, weight: .bold, design: .rounded)).contentTransition(.numericText()).minimumScaleFactor(0.7).lineLimit(1)
             if let nutrient = selected?.nutrient {
                 let progress = TargetProgress(nutrient: nutrient, amount: nutrient.amount(in: totals), target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction)

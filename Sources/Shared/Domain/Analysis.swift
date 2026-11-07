@@ -53,6 +53,9 @@ public struct DailyGuidance: Sendable {
     }
 }
 public enum HistoryMath {
+    public static func targets(on date: Date, rest: Targets, training: Targets?, trainingDayKeys: [String], calendar: Calendar = .current) -> Targets {
+        trainingDayKeys.contains(DayKey.make(date, calendar: calendar)) ? training ?? rest : rest
+    }
     public static func totals(_ meals: [Meal], on date: Date, calendar: Calendar = .current) -> Nutrients {
         meals.filter { calendar.isDate($0.timestamp, inSameDayAs: date) }.reduce(.zero) { $0 + $1.total }
     }
