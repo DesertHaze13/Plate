@@ -3,22 +3,33 @@ import Charts
 import PlateCore
 
 extension Color {
-    static let plateMint = Color(red: 0.25, green: 0.72, blue: 0.57)
-    static let plateCarb = Color(red: 0.92, green: 0.65, blue: 0.33)
-    static let plateFat = Color(red: 0.64, green: 0.55, blue: 0.83)
+    static let plateCobalt = Color(red: 0.18, green: 0.25, blue: 0.86)
+    static let plateMint = adaptive(light: (0.18, 0.25, 0.86), dark: (0.58, 0.67, 1))
+    static let plateCarb = adaptive(light: (0.83, 0.28, 0.13), dark: (1, 0.61, 0.42))
+    static let plateFat = adaptive(light: (0.54, 0.43, 0.06), dark: (0.91, 0.79, 0.4))
+    private static func adaptive(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        #if os(iOS)
+        Color(uiColor: UIColor { traits in
+            let rgb = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
+        })
+        #else
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let rgb = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
+        })
+        #endif
+    }
 }
 extension DayStatus {
     var color: Color { switch self { case .calm: Color.plateMint; case .almost: .orange; case .hit: .green; case .over: .red } }
 }
+/// Solid paper surfaces: the brand lives in type, rules and ink rather than material cards.
 struct GlassCard: ViewModifier {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
-        content
-            .background { if reduceTransparency { RoundedRectangle(cornerRadius: 30).fill(.background) } }
-            .glassEffect(reduceTransparency ? .identity : .regular, in: .rect(cornerRadius: 30))
-            .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(scheme == .dark ? 0.12 : 0.58), lineWidth: 0.7))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.20 : 0.065), radius: 24, y: 10)
+        content.background(scheme == .dark ? Color(red: 0.10, green: 0.105, blue: 0.11) : Color(red: 0.995, green: 0.985, blue: 0.955), in: .rect(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.primary.opacity(scheme == .dark ? 0.19 : 0.15), lineWidth: 1))
     }
 }
 extension View { func plateCard() -> some View { modifier(GlassCard()) } }
@@ -27,10 +38,16 @@ struct PlateBackground: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                (scheme == .dark ? Color(red: 0.045, green: 0.065, blue: 0.09) : Color(red: 0.976, green: 0.973, blue: 0.958))
-                Circle().fill(Color.plateFat.opacity(scheme == .dark ? 0.14 : 0.07)).frame(width: 640, height: 640).position(x: geometry.size.width + 40, y: 40)
-                Circle().fill(status.color.opacity(scheme == .dark ? 0.10 : 0.07)).frame(width: 540, height: 540).position(x: -100, y: geometry.size.height * 0.7)
+            ZStack(alignment: .bottomTrailing) {
+                (scheme == .dark ? Color(red: 0.065, green: 0.07, blue: 0.075) : Color(red: 0.95, green: 0.935, blue: 0.89))
+                // A cropped printer's plate. Static, subtle, and deliberately not an ambient gradient.
+                ZStack {
+                    ForEach(0..<3) { index in
+                        Circle().stroke(.primary.opacity(scheme == .dark ? 0.035 : 0.045), lineWidth: 1)
+                            .padding(CGFloat(index) * 30)
+                    }
+                }.frame(width: 440, height: 440).offset(x: 220, y: 100)
+                Rectangle().fill(.primary.opacity(0.06)).frame(width: 1).padding(.trailing, 18)
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
@@ -88,7 +105,7 @@ func platformImage(_ data: Data) -> Image? {
 }
 struct SectionEyebrow: View {
     let text: String
-    var body: some View { Text(text.uppercased()).font(.system(size: 11, weight: .semibold, design: .rounded)).tracking(2.5).foregroundStyle(.secondary) }
+    var body: some View { Text(text.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1.8).foregroundStyle(.secondary) }
 }
 
 struct PlatePress: ButtonStyle {
@@ -114,33 +131,26 @@ struct PlateIconTile: View {
     let symbol: String
     let tint: Color
     var size: CGFloat = 42
-    @State private var hovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        Image(systemName: symbol).font(.system(size: size * 0.45, weight: .semibold)).foregroundStyle(.white)
+        Image(systemName: symbol).font(.system(size: size * 0.43, weight: .medium)).foregroundStyle(tint)
             .frame(width: size, height: size)
-            .background(LinearGradient(colors: [tint.opacity(0.75), tint], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: size * 0.31))
-            .overlay(RoundedRectangle(cornerRadius: size * 0.31).stroke(.white.opacity(0.4), lineWidth: 0.8))
-            .shadow(color: tint.opacity(hovering ? 0.4 : 0.22), radius: hovering ? 13 : 7, y: 5)
-            .rotation3DEffect(.degrees(hovering && !reduced ? -12 : 0), axis: (x: 0.3, y: 1, z: 0))
-            .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.65), value: hovering)
-            .onHover { hovering = $0 }.accessibilityHidden(true)
+            .overlay(Circle().stroke(tint.opacity(0.5), lineWidth: 1))
+            .accessibilityHidden(true)
     }
 }
 struct PlateSculpture: View {
     @State private var turned = false
-    @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        Button { withAnimation(reduced ? nil : .spring(response: 0.7, dampingFraction: 0.45)) { turned.toggle() } } label: {
+        Button { withAnimation(reduced ? nil : .spring(response: 0.7, dampingFraction: 0.55)) { turned.toggle() } } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 32).fill(Color.plateCarb.gradient).frame(width: 95, height: 108).rotationEffect(.degrees(turned ? 18 : -18)).offset(x: -12, y: -5)
-                RoundedRectangle(cornerRadius: 32).fill(LinearGradient(colors: [.white.opacity(0.96), Color.plateMint.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 95, height: 108).rotationEffect(.degrees(turned ? -20 : 13)).offset(x: 13, y: 5).shadow(color: .black.opacity(0.16), radius: 14, y: 10)
-                Image(systemName: "fork.knife").font(.system(size: 34, weight: .medium)).foregroundStyle(Color(red: 0.08, green: 0.32, blue: 0.25)).rotationEffect(.degrees(turned ? -20 : 13)).offset(x: 13, y: 5)
-                Image(systemName: "sparkle").font(.title3).foregroundStyle(Color.plateCarb).offset(x: turned ? -52 : 55, y: turned ? -48 : -42)
-            }.frame(width: 145, height: 145).rotation3DEffect(.degrees(reduced ? 0 : turned || hovering ? 12 : -7), axis: (x: 0.3, y: 1, z: 0))
-        }.buttonStyle(PlatePress()).onHover { value in withAnimation(reduced ? nil : .spring(response: 0.5)) { hovering = value } }
-            .accessibilityLabel("Play with the Plate illustration").accessibilityHint("Tilts the illustration without changing your food log")
+                Circle().fill(Color.plateCobalt).frame(width: 138, height: 138)
+                Circle().stroke(.white.opacity(0.7), lineWidth: 1).frame(width: 116, height: 116)
+                Circle().stroke(.white.opacity(0.35), lineWidth: 1).frame(width: 92, height: 92)
+                Image(systemName: "fork.knife").font(.system(size: 32, weight: .light)).foregroundStyle(.white).rotationEffect(.degrees(turned ? 90 : -12))
+                Text("P.").font(.system(size: 20, weight: .black)).foregroundStyle(.white).offset(x: 50, y: -48)
+            }.frame(width: 150, height: 150).rotationEffect(.degrees(turned && !reduced ? 18 : 0))
+        }.buttonStyle(PlatePress()).accessibilityLabel("Play with the Plate illustration").accessibilityHint("Turns the plate without changing your food log")
     }
 }
 struct PlateSegmentedControl: View {
@@ -153,10 +163,10 @@ struct PlateSegmentedControl: View {
             ForEach(Array(options.enumerated()), id: \.offset) { index, title in
                 Button { withAnimation(reduced ? nil : .spring(response: 0.35, dampingFraction: 0.8)) { selection = index } } label: {
                     Text(title).font(.system(.caption, design: .rounded, weight: .bold)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                        .background { if selection == index { Capsule().fill(Color.plateMint.opacity(0.20)).matchedGeometryEffect(id: "segment", in: highlight) } }
+                        .background { if selection == index { RoundedRectangle(cornerRadius: 5).fill(Color.plateMint.opacity(0.15)).matchedGeometryEffect(id: "segment", in: highlight) } }
                 }.buttonStyle(PlatePress()).foregroundStyle(.primary).accessibilityAddTraits(selection == index ? .isSelected : [])
             }
-        }.padding(4).background(.primary.opacity(0.045), in: .capsule).sensoryFeedback(.selection, trigger: selection)
+        }.padding(4).background(.primary.opacity(0.035), in: .rect(cornerRadius: 7)).sensoryFeedback(.selection, trigger: selection)
     }
 }
 struct PlatePageTitle: View {
@@ -166,7 +176,7 @@ struct PlatePageTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             SectionEyebrow(text: eyebrow)
-            Text(title).font(.system(size: 36, weight: .bold, design: .rounded)).tracking(-1.4)
+            Text(title).font(.system(size: 40, weight: .black)).fontWidth(.condensed).tracking(-1.6)
             Text(subtitle).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -501,30 +511,31 @@ struct SlimPlateHero: View {
     private var selected: PlatePieSlice? { slices.first { $0.id == selectedID } }
     private var energy: Double { slices.reduce(0) { $0 + $1.calories } }
     private func tint(_ slice: PlatePieSlice) -> Color {
-        switch slice.nutrient { case .protein: .plateMint; case .carbs: .plateCarb; default: .plateFat }
+        switch slice.nutrient { case .protein: Color(red: 0.78, green: 0.94, blue: 0.32); case .carbs: .white; default: Color(red: 1, green: 0.60, blue: 0.40) }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text("\(dayTitle) / YOUR PLATE").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
+                Text("01 / \(dayTitle) · INTAKE").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
                 Spacer()
                 Button { showDetails = true } label: { Image(systemName: "arrow.up.right").font(.subheadline.bold()).frame(width: 36, height: 36).background(.white.opacity(0.1), in: .circle) }.buttonStyle(PlatePress()).accessibilityLabel("Lihat rincian makanan dan kategori")
             }
+            Rectangle().fill(.white.opacity(0.35)).frame(height: 1)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 22) { ring; readout.frame(maxWidth: .infinity, alignment: .leading) }
+                HStack(spacing: 24) { readout.frame(maxWidth: .infinity, alignment: .leading); ring }
                 VStack(alignment: .leading, spacing: 18) { ring.frame(maxWidth: .infinity); readout }
             }
             HStack(spacing: 8) { ForEach(slices) { slice in macroButton(slice) } }
             Text(energy > 0 ? "Ketuk irisan untuk melihat makro · Rincian ↗" : "Catat makanan untuk mengisi diagrammu.").font(.caption2).foregroundStyle(.white.opacity(0.55))
-        }.padding(22).foregroundStyle(.white)
+        }.padding(24).foregroundStyle(.white)
             .background {
                 ZStack(alignment: .topTrailing) {
-                    LinearGradient(colors: [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Circle().fill(Color.plateMint.opacity(glow ? 0.16 : 0.06)).frame(width: 260, height: 260).blur(radius: 35).offset(x: 100, y: -110).scaleEffect(glow ? 1.15 : 0.85)
-                }.clipShape(.rect(cornerRadius: 34))
+                    Color.plateCobalt
+                    Circle().stroke(.white.opacity(glow ? 0.14 : 0.06), lineWidth: 1).frame(width: 310, height: 310).offset(x: 145, y: -170).scaleEffect(glow ? 1.08 : 0.94)
+                    Text("P.").font(.system(size: 180, weight: .black)).tracking(-12).foregroundStyle(.white.opacity(0.04)).offset(x: 12, y: -70)
+                }.clipShape(.rect(cornerRadius: 14))
             }
-            .overlay(RoundedRectangle(cornerRadius: 34).stroke(.white.opacity(0.13)))
-            .shadow(color: Color.plateMint.opacity(0.16), radius: 24, y: 12)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.18)))
             .environment(\.colorScheme, .dark)
             .animation(reduced ? nil : .spring(response: 0.45, dampingFraction: 0.78), value: selectedID)
             .animation(reduced ? nil : .smooth(duration: 0.6), value: totals)
@@ -561,12 +572,12 @@ struct SlimPlateHero: View {
     private var readout: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(selected?.nutrient?.indonesianTitle ?? energyTitle).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.65))
-            Text(selected.map { "\(($0.grams ?? 0).formatted(.number.precision(.fractionLength(0...1)))) g" } ?? "\(Int(totals.calories))").font(.system(size: 35, weight: .bold, design: .rounded)).contentTransition(.numericText()).minimumScaleFactor(0.7).lineLimit(1)
+            Text(selected.map { "\(($0.grams ?? 0).formatted(.number.precision(.fractionLength(0...1)))) g" } ?? "\(Int(totals.calories))").font(.system(size: 64, weight: .black)).fontWidth(.condensed).tracking(-2).contentTransition(.numericText()).minimumScaleFactor(0.7).lineLimit(1)
             if let nutrient = selected?.nutrient {
                 let progress = TargetProgress(nutrient: nutrient, amount: nutrient.amount(in: totals), target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction)
-                Text(progress.indonesianDifference).font(.caption.weight(.semibold)).foregroundStyle(progress.state == .over ? Color.plateCarb : .white.opacity(0.8))
+                Text(progress.indonesianDifference).font(.caption.weight(.semibold)).foregroundStyle(progress.state == .over ? Color(red: 1, green: 0.83, blue: 0.57) : .white.opacity(0.9))
             } else { Text("/ \(Int(targets.nutrients.calories)) kcal target").font(.caption).foregroundStyle(.white.opacity(0.65)) }
-            if selected != nil { Button("Lihat total") { selectedID = nil; angle = nil }.font(.caption).foregroundStyle(Color.plateMint) }
+            if selected != nil { Button("Lihat total") { selectedID = nil; angle = nil }.font(.caption).foregroundStyle(.white) }
         }.fixedSize(horizontal: false, vertical: true)
     }
     private func macroButton(_ slice: PlatePieSlice) -> some View {
@@ -575,8 +586,8 @@ struct SlimPlateHero: View {
                 HStack(spacing: 4) { Circle().fill(tint(slice)).frame(width: 5, height: 5); Text(slice.nutrient?.indonesianTitle ?? slice.title).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.65) }
                 Text("\(Int(slice.grams ?? 0)) g").font(.system(.subheadline, design: .rounded, weight: .bold)).contentTransition(.numericText())
             }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                .background(tint(slice).opacity(selectedID == slice.id ? 0.23 : 0.08), in: .rect(cornerRadius: 15))
-                .overlay(RoundedRectangle(cornerRadius: 15).stroke(tint(slice).opacity(selectedID == slice.id ? 0.65 : 0.15)))
+                .background(tint(slice).opacity(selectedID == slice.id ? 0.23 : 0.08), in: .rect(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(tint(slice).opacity(selectedID == slice.id ? 0.65 : 0.15)))
         }.buttonStyle(PlatePress()).accessibilityLabel("\(slice.nutrient?.indonesianTitle ?? slice.title), \(Int(slice.grams ?? 0)) gram").accessibilityAddTraits(selectedID == slice.id ? .isSelected : [])
     }
 }

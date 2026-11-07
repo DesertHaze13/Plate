@@ -2,7 +2,7 @@
 
 A native SwiftUI food and nutrition tracker for iPhone, iPad, and Mac.
 
-Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its interface includes native Liquid Glass tab navigation, dimensional illustrations, a slim selectable macro pie hero with animated counts and a breathing halo, switchable nutrition stories, a custom calendar, charts, and adaptive layouts for each platform.
+Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its original visual identity takes cues from editorial food journals and printed nutrition labels: bold condensed type, cobalt ink, warm paper, precise rules and a plate-shaped signature. Native Liquid Glass navigation remains part of the Apple platform experience.
 
 ## Features
 
@@ -65,9 +65,9 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 14.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 15.
 
-See [the UI comparison](Documentation/UI_COMPARISON.md) for the Current-inspired interaction update and the Google sign-in crash fix.
+See [the UI comparison](Documentation/UI_COMPARISON.md) for the earlier interaction update and Google sign-in crash fix (historical). Build 15 replaces that visual direction with Plate’s own identity.
 
 On iPhone, native system tabs provide the selection lens and touch tracking. On iOS 27, the camera uses the prominent tab role; Settings is accessible from the top toolbar. The custom simulated tab selector has been removed.
 
@@ -82,3 +82,5 @@ Food photos now use full `gemini-3.5-flash` with a thinking budget before on-dev
 Today’s warning banner is in Indonesian, reports the exact remaining or excess amount for each target, and stays visible while scrolling when a target has been exceeded. The thin macro ring supports slice selection, accessible macro buttons, animated values and a food/category detail sheet. Motion follows Reduce Motion.
 
 The Today title opens a date picker, and a seven-day strip lets you revisit previous records. Selecting a day updates meals, totals, the macro hero, warnings and summaries together. Return to Today resumes the live day, including midnight rollover. Historical comparisons use currently configured targets and the selected date’s stored training-day flag. Browsing dates never changes meal timestamps or today’s training flag.
+
+See [Plate’s visual identity](Documentation/PLATE_IDENTITY.md) for the original build 15 design.
