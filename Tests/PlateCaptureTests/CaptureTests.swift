@@ -45,4 +45,32 @@ final class CaptureTests: XCTestCase {
         do { _ = try await RecognitionService().analyze(data: Data([0, 1, 2]), cloudAllowed: false); XCTFail("Malformed image should fail") }
         catch { /* Expected: no guessed nutrition and no cloud fallback. */ }
     }
+    func testEmptyDescriptionNeverStartsAIGeneration() async {
+        do { _ = try await RecognitionService().analyze(data: nil, description: "  ", cloudAllowed: true); XCTFail("Empty input must fail before AI") }
+        catch RecognitionError.noFoods { }
+        catch { XCTFail("Unexpected error: \(error)") }
+    }
+    func testEmptySingleFoodCorrectionNeverStartsAIGeneration() async {
+        let item = FoodItem(name: "Tempe", category: .protein, servingDescription: "100 g", nutrients: .init(calories: 200))
+        do { _ = try await RecognitionService().refine(item: item, instruction: " ", imageData: nil, cloudAllowed: true); XCTFail("Empty correction must fail") }
+        catch RecognitionError.noFoods { }
+        catch { XCTFail("Unexpected error: \(error)") }
+    }
+
+    func testAIDeadlineReturnsWithoutWaitingForLateSDKCallback() async {
+        let clock = ContinuousClock(); let start = clock.now
+        do {
+            let _: Int = try await RecognitionDeadline.run(seconds: 0.03) { try? await Task.sleep(for: .seconds(2)); return 9 }
+            XCTFail("Expected timeout")
+        } catch RecognitionError.timedOut { XCTAssertLessThan(start.duration(to: clock.now), .seconds(1)) }
+        catch { XCTFail("Unexpected error: \(error)") }
+    }
+    func testAIDeadlinePropagatesCancellation() async {
+        let task = Task { try await RecognitionDeadline.run(seconds: 2) { try await Task.sleep(for: .seconds(5)); return 3 } }
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch is CancellationError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+    }
+
 }

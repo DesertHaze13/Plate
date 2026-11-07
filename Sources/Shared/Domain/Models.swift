@@ -34,6 +34,7 @@ public struct FoodItem: Identifiable, Codable, Equatable, Sendable {
     public var bounds: FoodBounds?
     public var needsReviewFields: [String]?
     public var confidence: Double?
+    public var aiModel: String?
     public var source: MealSource
     public var total: Nutrients { nutrients.scaled(by: quantity) }
     public init(name: String, category: FoodCategory, servingDescription: String, nutrients: Nutrients, quantity: Double = 1, confidence: Double? = nil, source: MealSource = .manual) {

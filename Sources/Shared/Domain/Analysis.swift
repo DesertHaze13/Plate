@@ -151,6 +151,13 @@ public enum PieBreakdown {
 
 public enum RecognitionModel {
     public static let advanced = "gemini-3.5-flash"
+    public static let fallback = "gemini-3.5-flash-lite"
+    public static func candidates(primary: String, allowFallback: Bool) -> [String] {
+        var names = ["gemini-3.8-flash", "gemini-3.6-flash"].contains(primary) ? [primary, advanced] : [primary]
+        if allowFallback, !names.contains(fallback) { names.append(fallback) }
+        return names
+    }
+    public static func allowsFallback(statusCode: Int) -> Bool { statusCode == 429 || statusCode == 503 }
     public static func modelName(configured: String?) -> String {
         let name = configured?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty || name == "gemini-3.5-flash-lite" ? advanced : name
@@ -171,5 +178,15 @@ public extension TargetProgress {
         case .met: return "Target tercapai"
         case .unset: return "Atur target dahulu"
         }
+    }
+}
+
+/// A single-food AI edit retains record identity; siblings and meal metadata are not part of this operation.
+public enum FoodAIRevision {
+    public static func applying(_ proposal: FoodItem, to original: FoodItem) -> FoodItem {
+        var updated = proposal
+        updated.id = original.id
+        updated.bounds = original.bounds
+        return updated
     }
 }

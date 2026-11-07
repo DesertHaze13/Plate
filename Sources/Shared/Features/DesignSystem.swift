@@ -28,8 +28,9 @@ extension DayStatus {
 struct GlassCard: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
-        content.background(scheme == .dark ? Color(red: 0.10, green: 0.105, blue: 0.11) : Color(red: 0.995, green: 0.985, blue: 0.955), in: .rect(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.primary.opacity(scheme == .dark ? 0.19 : 0.15), lineWidth: 1))
+        content.background(scheme == .dark ? Color(red: 0.10, green: 0.105, blue: 0.11) : Color(red: 0.995, green: 0.985, blue: 0.955), in: .rect(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.primary.opacity(scheme == .dark ? 0.35 : 0.8), lineWidth: 1.5))
+            .shadow(color: .primary.opacity(scheme == .dark ? 0.2 : 0.12), radius: 0, x: 3, y: 4)
     }
 }
 extension View { func plateCard() -> some View { modifier(GlassCard()) } }
@@ -39,7 +40,7 @@ struct PlateBackground: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottomTrailing) {
-                (scheme == .dark ? Color(red: 0.065, green: 0.07, blue: 0.075) : Color(red: 0.95, green: 0.935, blue: 0.89))
+                (scheme == .dark ? Color(red: 0.065, green: 0.07, blue: 0.075) : Color(red: 0.98, green: 0.94, blue: 0.97))
                 // A cropped printer's plate. Static, subtle, and deliberately not an ambient gradient.
                 ZStack {
                     ForEach(0..<3) { index in
@@ -138,7 +139,7 @@ struct PlateIconTile: View {
             .accessibilityHidden(true)
     }
 }
-struct PlateSculpture: View {
+struct LegacyPlateSculpture: View {
     @State private var turned = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
@@ -176,7 +177,7 @@ struct PlatePageTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             SectionEyebrow(text: eyebrow)
-            Text(title).font(.system(size: 40, weight: .black)).fontWidth(.condensed).tracking(-1.6)
+            Text(title).font(.system(size: 38, weight: .black, design: .rounded)).tracking(-1.5)
             Text(subtitle).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -516,7 +517,7 @@ struct SlimPlateHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text("01 / \(dayTitle) · INTAKE").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
+                Text("✳︎ \(dayTitle) / YOUR ENERGY").font(.system(size: 10, weight: .bold)).tracking(2).foregroundStyle(.white.opacity(0.65))
                 Spacer()
                 Button { showDetails = true } label: { Image(systemName: "arrow.up.right").font(.subheadline.bold()).frame(width: 36, height: 36).background(.white.opacity(0.1), in: .circle) }.buttonStyle(PlatePress()).accessibilityLabel("Lihat rincian makanan dan kategori")
             }
@@ -535,7 +536,7 @@ struct SlimPlateHero: View {
                     Text("P.").font(.system(size: 180, weight: .black)).tracking(-12).foregroundStyle(.white.opacity(0.04)).offset(x: 12, y: -70)
                 }.clipShape(.rect(cornerRadius: 14))
             }
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.18)))
+            .overlay(RoundedRectangle(cornerRadius: 30).stroke(.primary.opacity(0.75), lineWidth: 2))
             .environment(\.colorScheme, .dark)
             .animation(reduced ? nil : .spring(response: 0.45, dampingFraction: 0.78), value: selectedID)
             .animation(reduced ? nil : .smooth(duration: 0.6), value: totals)
@@ -572,7 +573,7 @@ struct SlimPlateHero: View {
     private var readout: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(selected?.nutrient?.indonesianTitle ?? energyTitle).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.65))
-            Text(selected.map { "\(($0.grams ?? 0).formatted(.number.precision(.fractionLength(0...1)))) g" } ?? "\(Int(totals.calories))").font(.system(size: 64, weight: .black)).fontWidth(.condensed).tracking(-2).contentTransition(.numericText()).minimumScaleFactor(0.7).lineLimit(1)
+            Text(selected.map { "\(($0.grams ?? 0).formatted(.number.precision(.fractionLength(0...1)))) g" } ?? "\(Int(totals.calories))").font(.system(size: 58, weight: .black, design: .rounded)).tracking(-2).contentTransition(.numericText()).minimumScaleFactor(0.7).lineLimit(1)
             if let nutrient = selected?.nutrient {
                 let progress = TargetProgress(nutrient: nutrient, amount: nutrient.amount(in: totals), target: nutrient.amount(in: targets.nutrients), warningFraction: targets.warningFraction)
                 Text(progress.indonesianDifference).font(.caption.weight(.semibold)).foregroundStyle(progress.state == .over ? Color(red: 1, green: 0.83, blue: 0.57) : .white.opacity(0.9))
@@ -589,5 +590,100 @@ struct SlimPlateHero: View {
                 .background(tint(slice).opacity(selectedID == slice.id ? 0.23 : 0.08), in: .rect(cornerRadius: 5))
                 .overlay(RoundedRectangle(cornerRadius: 5).stroke(tint(slice).opacity(selectedID == slice.id ? 0.65 : 0.15)))
         }.buttonStyle(PlatePress()).accessibilityLabel("\(slice.nutrient?.indonesianTitle ?? slice.title), \(Int(slice.grams ?? 0)) gram").accessibilityAddTraits(selectedID == slice.id ? .isSelected : [])
+    }
+}
+
+struct PlateSculpture: View {
+    var body: some View { BitePlayground().frame(maxWidth: 360) }
+}
+
+/// Original food characters built from native shapes. Each is a spring-loaded, draggable sticker.
+struct BiteBuddy: View {
+    let kind: Int
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var floating = false
+    @State private var popped = false
+    @State private var cheers = 0
+    @GestureState private var drag = CGSize.zero
+    private var tint: Color { kind == 0 ? Color(red: 0.74, green: 0.91, blue: 0.34) : kind == 1 ? Color(red: 1, green: 0.72, blue: 0.78) : Color(red: 1, green: 0.60, blue: 0.28) }
+    var body: some View {
+        ZStack {
+            if popped && !reduced {
+                ForEach(0..<6) { index in
+                    Image(systemName: index.isMultiple(of: 2) ? "sparkle" : "heart.fill")
+                        .font(.system(size: 12, weight: .black)).foregroundStyle(tint)
+                        .offset(x: cos(Double(index) * .pi / 3) * 72, y: sin(Double(index) * .pi / 3) * 65)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            ZStack {
+                if kind == 0 {
+                    Ellipse().fill(Color(red: 0.23, green: 0.42, blue: 0.16)).frame(width: 86, height: 108)
+                    Ellipse().fill(tint).frame(width: 73, height: 94)
+                    Circle().fill(Color(red: 0.58, green: 0.29, blue: 0.15)).frame(width: 39, height: 39).offset(y: 13)
+                } else if kind == 1 {
+                    RoundedRectangle(cornerRadius: 30).fill(Color(red: 1, green: 0.96, blue: 0.83)).frame(width: 100, height: 91).rotationEffect(.degrees(-10))
+                    Circle().fill(Color(red: 1, green: 0.72, blue: 0.13)).frame(width: 65, height: 65)
+                } else {
+                    RoundedRectangle(cornerRadius: 24).fill(tint).frame(width: 75, height: 100).rotationEffect(.degrees(13))
+                    HStack(spacing: 7) { ForEach(0..<3) { _ in Capsule().fill(.white.opacity(0.6)).frame(width: 4, height: 24) } }.rotationEffect(.degrees(13)).offset(y: -20)
+                }
+                HStack(spacing: 14) { Capsule().fill(.black).frame(width: 5, height: popped ? 3 : 9); Capsule().fill(.black).frame(width: 5, height: popped ? 3 : 9) }.offset(y: kind == 0 ? -14 : -3)
+                Circle().trim(from: 0.08, to: 0.42).stroke(.black, style: StrokeStyle(lineWidth: 2.5, lineCap: .round)).frame(width: 16, height: 16).rotationEffect(.degrees(0)).offset(y: kind == 0 ? -6 : 6)
+                Circle().fill(Color.pink.opacity(0.45)).frame(width: 11, height: 6).offset(x: -24, y: kind == 0 ? -7 : 3)
+                Circle().fill(Color.pink.opacity(0.45)).frame(width: 11, height: 6).offset(x: 24, y: kind == 0 ? -7 : 3)
+            }
+            .compositingGroup()
+            .shadow(color: .black.opacity(0.8), radius: 0, x: 4, y: 5)
+            .scaleEffect(popped && !reduced ? 1.13 : 1)
+            .rotationEffect(.degrees(reduced ? 0 : (floating ? 6 : -6) + Double(drag.width) * 0.15))
+            .offset(x: reduced ? 0 : min(40,max(-40,drag.width)), y: reduced ? 0 : min(25,max(-25,drag.height)) + (floating ? -5 : 5))
+        }.frame(width: 118, height: 130).contentShape(.rect)
+            .onTapGesture { celebrate() }
+            .gesture(DragGesture().updating($drag) { value, state, _ in state = value.translation }.onEnded { _ in celebrate() })
+            .animation(reduced ? nil : .spring(response: 0.42, dampingFraction: 0.5), value: drag)
+            .animation(reduced ? nil : .spring(response: 0.35, dampingFraction: 0.55), value: popped)
+            .onAppear { if !reduced { withAnimation(.easeInOut(duration: 2.3 + Double(kind) * 0.35).repeatForever(autoreverses: true)) { floating = true } } }
+            .onChange(of: reduced) { _, value in if value { floating = false; popped = false } }
+            .sensoryFeedback(.selection, trigger: cheers)
+            .accessibilityElement(children: .ignore).accessibilityLabel(kind == 0 ? "Avocado buddy" : kind == 1 ? "Sunny egg buddy" : "Crunch buddy").accessibilityHint("Tap to cheer; drag to play").accessibilityAddTraits(.isButton).accessibilityAction { celebrate() }
+    }
+    private func celebrate() {
+        cheers += 1; popped = true
+        Task { try? await Task.sleep(for: .milliseconds(650)); popped = false }
+    }
+}
+struct BitePlayground: View {
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var shuffled = false
+    var body: some View {
+        VStack(spacing: 0) {
+            GeometryReader { geometry in
+                HStack(spacing: -10) {
+                    BiteBuddy(kind: shuffled ? 2 : 0).rotationEffect(.degrees(-10)).zIndex(1)
+                    BiteBuddy(kind: 1).offset(y: -8).zIndex(2)
+                    BiteBuddy(kind: shuffled ? 0 : 2).rotationEffect(.degrees(10)).zIndex(1)
+                }.frame(width: 334, height: 140)
+                    .scaleEffect(min(1, geometry.size.width / 334))
+                    .position(x: geometry.size.width / 2, y: 70)
+            }.frame(height: 140)
+            Button { withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.65)) { shuffled.toggle() } } label: {
+                Label("GOOD FOOD. GOOD MOOD.", systemImage: "shuffle").font(.system(size: 10, weight: .black, design: .rounded)).tracking(1).padding(.horizontal, 13).padding(.vertical, 8).foregroundStyle(.black).background(Color(red: 0.84, green: 0.97, blue: 0.38), in: .capsule).rotationEffect(.degrees(shuffled && !reduced ? 3 : -3))
+            }.buttonStyle(PlatePress()).accessibilityHint("Shuffle the food characters")
+        }.padding(.bottom, 8)
+    }
+}
+struct PlayfulTicker: View {
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var moving = false
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 25) {
+                ForEach(0..<6) { _ in Text("FUEL YOUR PLOT ✳︎ ONE BITE AT A TIME ✳︎").font(.system(size: 11, weight: .black, design: .rounded)).tracking(1) }
+            }.fixedSize().offset(x: moving && !reduced ? -280 : 0)
+                .frame(width: geo.size.width, alignment: .leading)
+                .onAppear { if !reduced { withAnimation(.linear(duration: 16).repeatForever(autoreverses: true)) { moving = true } } }
+                .onChange(of: reduced) { _, value in if value { moving = false } }
+        }.frame(height: 25).clipped().foregroundStyle(Color.plateMint).accessibilityElement(children: .ignore).accessibilityLabel("Fuel your plot, one bite at a time")
     }
 }

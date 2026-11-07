@@ -12,6 +12,10 @@ struct CaptureView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("cloudRecognitionAllowed") private var cloudAllowed = true
     @Namespace private var reviewGlass
+    @State private var foodDescription = ""
+    @State private var requestID = UUID()
+    @State private var started = Date.now
+    @State private var analyzedDescription: String?
     @State private var picker: PhotosPickerItem?
     @State private var importing = false
     @State private var camera = false
@@ -24,6 +28,7 @@ struct CaptureView: View {
     @State private var error: String?
     @State private var saveFood = false
     @State private var editingItem: String?
+    @State private var aiEditingItem: String?
     @State private var task: Task<Void, Never>?
     @State private var servings = 1.0
     @State private var grams = 100.0
@@ -36,15 +41,19 @@ struct CaptureView: View {
         return training ? model.store.account.settings.trainingDayTargets ?? model.store.targets : model.store.targets
     }
     private var projectedTotals: Nutrients { HistoryMath.totals(model.store.meals, on: mealDate) + totals }
-    private var canSave: Bool { !selected.isEmpty && selected.allSatisfy { ($0.needsReviewFields ?? []).isEmpty } && Meal(items: selected).isValid }
+    private var canSave: Bool { (analysis == nil || analyzedDescription == foodDescription) && !selected.isEmpty && selected.allSatisfy { ($0.needsReviewFields ?? []).isEmpty } && Meal(items: selected).isValid }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if let photo { imageReview(photo.full) }
                     else { inputOptions }
+                    descriptionComposer
                     if analyzing {
-                        HStack { ProgressView(); VStack(alignment: .leading) { Text("Reading your plate…").font(.headline); Text("Looking for food, labels and serving sizes.").font(.caption).foregroundStyle(.secondary) } }.padding()
+                        TimelineView(.periodic(from: started, by: 1)) { context in
+                            HStack { ProgressView(); Text("Membaca foto + ceritamu… \(max(0,Int(context.date.timeIntervalSince(started)))) dtk").font(.subheadline) }
+                        }
+                        Button("Batalkan analisis") { requestID = UUID(); task?.cancel(); analyzing = false }
                     }
                     if let analysis {
                         Label(analysis.kind == .label ? "Read from label" : analysis.kind == .mixed ? "Food + label" : "Review your meal", systemImage: analysis.kind == .label ? "text.viewfinder" : "sparkles").font(.headline)
@@ -90,7 +99,10 @@ struct CaptureView: View {
                 #endif
             }
             .sheet(item: Binding(get: { editingItem.map(ItemID.init) }, set: { editingItem = $0?.id })) { id in
-                if let index = items.firstIndex(where: { $0.id == id.id }) { FoodItemEditor(item: $items[index]) }
+                if let index = items.firstIndex(where: { $0.id == id.id }) { FoodItemEditor(item: $items[index], draftPhoto: photo?.full) }
+            }
+            .sheet(item: Binding(get: { aiEditingItem.map(ItemID.init) }, set: { aiEditingItem = $0?.id })) { id in
+                if let index = items.firstIndex(where: { $0.id == id.id }) { FoodAIRevisionView(item: $items[index], draftPhoto: photo?.full).environment(model) }
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.image]) { result in
                 do { let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }; receive(try Data(contentsOf: url)) }
@@ -168,6 +180,7 @@ struct CaptureView: View {
                     Text(item.name).font(.headline)
                     Text("\(item.quantity.formatted(.number.precision(.fractionLength(0...2)))) × \(item.servingDescription)").font(.caption).foregroundStyle(.secondary)
                     HStack {
+                        if item.aiModel == RecognitionModel.fallback { Text("Flash Lite · cadangan").foregroundStyle(.orange) }
                         if item.source == .label { Label("Read from label", systemImage: "text.viewfinder").foregroundStyle(Color.plateMint) }
                         else if let confidence = item.confidence { Text("\(Int(confidence*100))% confidence").foregroundStyle(.secondary) }
                         if (item.confidence ?? 1) < 0.75 || !(item.needsReviewFields ?? []).isEmpty { Text("Perlu diperiksa").foregroundStyle(.orange) }
@@ -176,6 +189,7 @@ struct CaptureView: View {
             }.buttonStyle(.plain)
             VStack(alignment: .trailing, spacing: 8) {
                 Text("\(Int(item.total.calories)) kcal").font(.subheadline.bold().monospacedDigit())
+                Button("Edit dengan AI", systemImage: "sparkles") { aiEditingItem = item.id }.font(.caption).buttonStyle(.bordered)
                 Button("Remove", systemImage: "xmark") { items.removeAll { $0.id == item.id } }.labelStyle(.iconOnly).font(.caption).foregroundStyle(.secondary)
             }
         }.padding(18).plateCard().opacity(excluded.contains(item.id) ? 0.45 : 1)
@@ -196,17 +210,33 @@ struct CaptureView: View {
             DisclosureGroup("Recognized text") { Text(label.rawText).font(.caption.monospaced()).textSelection(.enabled) }
         }.padding(18).plateCard()
     }
-    private func scaleLabel(_ quantity: Double) { for index in items.indices where items[index].source == .label { items[index].quantity = quantity } }
+    private func scaleLabel(_ quantity: Double) { for index in items.indices where items[index].source == .label { items[index].quantity = quantity; items[index].needsReviewFields?.removeAll { $0 == "quantity" } } }
     private func receive(_ data: Data) {
-        task?.cancel(); analyzing = true; analysis = nil; items = []; excluded = []; error = nil
+        requestID = UUID(); task?.cancel(); analyzing = false; analysis = nil; items = []; excluded = []; error = nil
+        do { photo = try ImageCodec.prepare(data) } catch { self.error = error.localizedDescription }
+    }
+    private var descriptionComposer: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Label("Foto + ceritamu", systemImage: "sparkles").font(.system(.headline, design: .rounded, weight: .bold))
+            TextField("Contoh: nasi kuning, ayam goreng, sambal; nasinya setengah porsi", text: $foodDescription, axis: .vertical).lineLimit(3...5).textFieldStyle(.roundedBorder).disabled(analyzing)
+            Text(photo == nil ? "Boleh pakai deskripsi saja, atau tambahkan foto supaya lebih jelas." : "Tambahkan nama makanan, porsi, cara masak atau bahan yang tidak terlihat.").font(.caption).foregroundStyle(.secondary)
+            if analysis != nil && analyzedDescription != foodDescription { Text("Deskripsi berubah. Analisis ulang sebelum menyimpan.").font(.caption.bold()).foregroundStyle(.orange) }
+            if !analyzing { Button(items.isEmpty ? "Analisis makanan" : "Analisis ulang foto + deskripsi", systemImage: "sparkles") { analyzeDraft() }.buttonStyle(.borderedProminent).disabled(photo == nil && foodDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            if photo != nil && !analyzing { Button("Ganti foto", systemImage: "photo") { photo = nil; analysis = nil; items = []; excluded = [] } }
+            Text(cloudAllowed ? "Foto/deskripsi baru dikirim ke AI cloud saat kamu menekan Analisis. Periksa hasil sebelum menyimpan." : "Cloud dimatikan. AI di perangkat digunakan bila tersedia.").font(.caption2).foregroundStyle(.secondary)
+        }.padding(20).plateCard()
+    }
+    private func analyzeDraft() {
+        task?.cancel(); analyzing = true; error = nil; started = .now
+        let id = UUID(); requestID = id
+        let image = photo?.full; let description = foodDescription
         task = Task {
             do {
-                let encoded = try ImageCodec.prepare(data); photo = encoded
-                let result = try await model.recognition.analyze(data: encoded.full, cloudAllowed: cloudAllowed)
-                try Task.checkCancellation()
-                withAnimation(reduceMotion ? nil : .spring) { analysis = result; items = result.items; analyzing = false; saveFood = result.items.contains { $0.source == .label } }
+                let result = try await model.recognition.analyze(data: image, description: description, cloudAllowed: cloudAllowed)
+                try Task.checkCancellation(); guard requestID == id else { return }
+                withAnimation(reduceMotion ? nil : .spring) { analysis = result; analyzedDescription = description; items = result.items; excluded = []; analyzing = false; saveFood = result.items.contains { $0.source == .label } }
             } catch is CancellationError { }
-            catch { self.error = error.localizedDescription; analyzing = false }
+            catch { guard requestID == id else { return }; self.error = error.localizedDescription; analyzing = false }
         }
     }
     private func save() {
@@ -221,18 +251,26 @@ struct CaptureView: View {
 private struct ItemID: Identifiable { let id: String }
 struct FoodItemEditor: View {
     @Binding var item: FoodItem
+    var existingPhotoPath: String?
+    var draftPhoto: Data?
+    @State private var showAI = false
+    @Environment(PlateModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             Form {
+                Section { Button("Edit dengan AI", systemImage: "sparkles") { showAI = true }; Text("Koreksi nama, porsi atau cara masak dengan foto dan deskripsi.").font(.caption).foregroundStyle(.secondary) }
                 Section("Food") { TextField("Name", text: $item.name).onChange(of: item.name) { _, _ in item.needsReviewFields?.removeAll { $0 == "name" } };
                     if item.needsReviewFields?.contains("name") == true { Text("Identitas makanan belum pasti. Koreksi nama atau konfirmasikan sebelum menyimpan.").font(.caption).foregroundStyle(.orange); Button("Konfirmasi nama makanan") { item.needsReviewFields?.removeAll { $0 == "name" } } }; TextField("Base serving", text: $item.servingDescription); Picker("Category", selection: $item.category) { ForEach(FoodCategory.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } } }
-                Section("Amount eaten") { Stepper(value: $item.quantity, in: 0.125...20, step: 0.125) { Text("\(item.quantity.formatted(.number.precision(.fractionLength(0...3)))) servings") } }
+                Section("Amount eaten") {
+                    Stepper(value: $item.quantity, in: 0.125...20, step: 0.125) { Text("\(item.quantity.formatted(.number.precision(.fractionLength(0...3)))) servings") }.onChange(of: item.quantity) { _, _ in item.needsReviewFields?.removeAll { $0 == "quantity" } }
+                    if item.needsReviewFields?.contains("quantity") == true { Button("Konfirmasi jumlah porsi") { item.needsReviewFields?.removeAll { $0 == "quantity" } } }
+                }
                 Section("Nutrition per base serving") {
                     field("Calories", "calories", \.calories, "kcal"); field("Protein", "protein", \.protein, "g"); field("Carbs", "carbs", \.carbs, "g"); field("Fat", "fat", \.fat, "g"); field("Fiber", "fiber", \.fiber, "g"); field("Sugar", "sugar", \.sugar, "g")
                 }
                 if !(item.needsReviewFields ?? []).isEmpty { Text("Periksa kolom yang ditandai. Lengkapi atau konfirmasikan sebelum menyimpan; nilai nol tetap boleh bila benar.").foregroundStyle(.orange).font(.caption) }
-            }.formStyle(.grouped).navigationTitle("Check your food").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            }.formStyle(.grouped).sheet(isPresented: $showAI) { FoodAIRevisionView(item: $item, existingPhotoPath: existingPhotoPath, draftPhoto: draftPhoto).environment(model) }.navigationTitle("Check your food").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         #if os(macOS)
         .frame(width: 600, height: 650)
@@ -274,3 +312,100 @@ struct CameraPicker: UIViewControllerRepresentable {
 }
 #endif
 #Preview { CaptureView().environment(PlateModel()) }
+
+struct FoodAIRevisionView: View {
+    @Binding var item: FoodItem
+    var existingPhotoPath: String?
+    var draftPhoto: Data?
+    @Environment(PlateModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("cloudRecognitionAllowed") private var cloudAllowed = true
+    @State private var instruction = ""
+    @State private var picker: PhotosPickerItem?
+    @State private var importing = false
+    @State private var camera = false
+    @State private var attachedPhoto: Data?
+    @State private var proposal: FoodItem?
+    @State private var busy = false
+    @State private var error: String?
+    @State private var task: Task<Void, Never>?
+    @State private var requestID = UUID()
+    @State private var started = Date.now
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("Edit dengan AI", systemImage: "sparkles").font(.system(.title2, design: .rounded, weight: .black))
+                    Text(item.name).font(.headline)
+                    Text("Jelaskan koreksinya. AI hanya mengubah makanan ini; makanan lain dan tanggal catatan tetap sama.").font(.subheadline).foregroundStyle(.secondary)
+                    TextField("Contoh: ini kroket daging, bukan perkedel; 2 buah kecil, digoreng", text: $instruction, axis: .vertical).lineLimit(3...6).textFieldStyle(.roundedBorder).disabled(busy)
+                    if let data = attachedPhoto, let image = platformImage(data) { image.resizable().scaledToFit().frame(maxHeight: 210).clipShape(.rect(cornerRadius: 20)) }
+                    HStack {
+                        PhotosPicker(selection: $picker, matching: .images) { Label("Foto", systemImage: "photo") }
+                        Button("File", systemImage: "square.and.arrow.down") { importing = true }
+                        #if os(iOS)
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Kamera", systemImage: "camera") { camera = true } }
+                        #endif
+                        if attachedPhoto != nil { Button("Lepas foto") { attachedPhoto = nil; proposal = nil } }
+                    }.buttonStyle(.bordered).disabled(busy)
+                    if attachedPhoto == nil && (draftPhoto != nil || existingPhotoPath != nil) { Text("Foto catatan akan disertakan bila tersedia. Foto baru menggantikannya untuk analisis ini.").font(.caption).foregroundStyle(.secondary) }
+                    Text(cloudAllowed ? "Foto dan koreksi dikirim ke AI cloud saat kamu menekan Analisis. Nilai gizi tetap perkiraan." : "Cloud dimatikan. Analisis memakai AI di perangkat jika tersedia.").font(.caption).foregroundStyle(.secondary)
+                    if busy {
+                        TimelineView(.periodic(from: started, by: 1)) { context in
+                            HStack { ProgressView(); Text("Memeriksa koreksi… \(max(0,Int(context.date.timeIntervalSince(started)))) dtk").font(.subheadline) }
+                        }
+                        Button("Batalkan analisis") { cancel() }
+                    } else {
+                        Button("Analisis koreksi", systemImage: "sparkles") { analyze() }.buttonStyle(.borderedProminent).disabled(instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachedPhoto == nil)
+                    }
+                    if let proposal {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("HASIL UNTUK DIPERIKSA").font(.caption.monospaced().bold())
+                            if let engine = proposal.aiModel { Text(engine == RecognitionModel.fallback ? "MODEL CADANGAN · FLASH LITE" : "GEMINI FLASH PENUH").font(.caption.bold()).foregroundStyle(engine == RecognitionModel.fallback ? Color.orange : .secondary) }
+                            Text(proposal.name).font(.title3.bold())
+                            Text("\(proposal.quantity.formatted()) × \(proposal.servingDescription)").font(.subheadline)
+                            Text("\(Int(item.total.calories)) → \(Int(proposal.total.calories)) kcal").font(.title2.bold().monospacedDigit())
+                            Text("Protein \(proposal.total.protein.formatted(.number.precision(.fractionLength(0...1)))) g · Karbo \(proposal.total.carbs.formatted(.number.precision(.fractionLength(0...1)))) g · Lemak \(proposal.total.fat.formatted(.number.precision(.fractionLength(0...1)))) g").font(.subheadline)
+                            if !(proposal.needsReviewFields ?? []).isEmpty { Text("Ada nilai atau identitas yang masih perlu dikonfirmasi di editor.").font(.caption).foregroundStyle(.orange) }
+                            Button("Terapkan ke makanan ini") { item = proposal; dismiss() }.buttonStyle(.borderedProminent)
+                            Text("Kamu masih bisa mengoreksi hasilnya di editor, lalu menyimpan catatan.").font(.caption).foregroundStyle(.secondary)
+                        }.padding(20).plateCard()
+                    }
+                    if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(.orange).font(.callout) }
+                }.padding(24)
+            }.background(PlateBackground(status: .calm)).navigationTitle("Koreksi makanan")
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Tutup") { cancel(); dismiss() } } }
+                .onChange(of: instruction) { _, _ in proposal = nil }
+                .onChange(of: picker) { _, value in Task { do { if let data = try await value?.loadTransferable(type: Data.self) { attachedPhoto = try ImageCodec.prepare(data).full; proposal = nil } } catch { self.error = error.localizedDescription } } }
+                .fileImporter(isPresented: $importing, allowedContentTypes: [.image]) { result in
+                    do { let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }; attachedPhoto = try ImageCodec.prepare(Data(contentsOf: url)).full; proposal = nil } catch { self.error = error.localizedDescription }
+                }
+                .sheet(isPresented: $camera) {
+                    #if os(iOS)
+                    CameraPicker { data in do { if let data { attachedPhoto = try ImageCodec.prepare(data).full; proposal = nil } } catch { self.error = error.localizedDescription } }
+                    #endif
+                }
+                .onDisappear { cancel() }
+        }
+        #if os(macOS)
+        .frame(width: 620, height: 700)
+        #endif
+    }
+    private func cancel() { requestID = UUID(); task?.cancel(); busy = false }
+    private func analyze() {
+        cancel(); busy = true; error = nil; proposal = nil; started = .now
+        let id = UUID(); requestID = id
+        let original = item; let correction = instruction; let picked = attachedPhoto ?? draftPhoto
+        task = Task {
+            do {
+                var image = picked
+                if image == nil, let existingPhotoPath { image = await PhotoStore.shared.load(path: existingPhotoPath, sync: model.sync) }
+                try Task.checkCancellation()
+                let result = try await model.recognition.refine(item: original, instruction: correction, imageData: image, cloudAllowed: cloudAllowed)
+                try Task.checkCancellation(); guard id == requestID else { return }
+                proposal = result; busy = false
+            } catch is CancellationError { }
+            catch { guard id == requestID else { return }; self.error = error.localizedDescription; busy = false }
+        }
+    }
+}

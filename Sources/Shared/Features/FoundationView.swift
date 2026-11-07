@@ -63,7 +63,7 @@ struct FoundationView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("PLATE.").font(.system(size: 44, weight: .black)).fontWidth(.condensed).tracking(-2.5)
+                        Text("plate✳︎").font(.system(size: 43, weight: .black, design: .rounded)).tracking(-2)
                         HStack { Text("FOOD / BODY / DAILY").font(.system(size: 9, weight: .semibold, design: .monospaced)); Spacer(); Image(systemName: "circle.inset.filled").foregroundStyle(Color.plateMint) }
                         Rectangle().fill(.primary).frame(height: 3)
                     }.padding(.top, 20)
@@ -84,7 +84,7 @@ struct FoundationView: View {
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Rectangle().fill(.primary.opacity(0.25)).frame(height: 1)
-                        Text("EVERY\nBITE\nCOUNTS.").font(.system(size: 32, weight: .black)).fontWidth(.condensed).tracking(-1).lineSpacing(-3)
+                        Text("A LITTLE\nMORE YUM.").font(.system(size: 29, weight: .black, design: .rounded)).tracking(-1)
                         Text("A record of how you fuel your life.").font(.caption).foregroundStyle(.secondary)
                     }.padding(.horizontal, 8).padding(.vertical, 18)
                     Label(model.sync.status, systemImage: model.sync.userID == nil ? "internaldrive" : "checkmark.icloud").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
@@ -271,22 +271,20 @@ struct TodayView: View {
     }
 
     private var statementHeader: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("PLATE / A DAILY FOOD RECORD").font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1)
-                Spacer()
-                Image(systemName: "asterisk").font(.system(size: 24, weight: .black)).foregroundStyle(Color.plateMint)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("PLATE / \(selectedDate.formatted(.dateTime.day().month(.abbreviated)))").font(.system(.caption, design: .monospaced, weight: .bold)); Spacer(); Text("LET’S EAT ✳︎").font(.caption.bold()).padding(9).background(Color.plateCarb.opacity(0.16), in: .capsule).rotationEffect(.degrees(-5)) }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) { playfulTitle.frame(minWidth: 260); BitePlayground().frame(width: 340) }
+                VStack(alignment: .leading, spacing: 4) { playfulTitle; BitePlayground().frame(maxWidth: .infinity) }
             }
-            Text("YOUR DAY,\nON A PLATE.")
-                .font(.system(size: 66, weight: .black)).fontWidth(.condensed).tracking(-2.8).lineSpacing(-7)
-                .fixedSize(horizontal: false, vertical: true).lineLimit(2).minimumScaleFactor(0.7)
-                .accessibilityLabel("Your day, on a plate")
-            HStack(alignment: .firstTextBaseline) {
-                Text(isToday ? "Eat with intention. Keep the record." : "A look back. Every bite remembered.").font(.subheadline).foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Text(selectedDate.formatted(.dateTime.day().month(.abbreviated))).font(.system(.caption, design: .monospaced, weight: .bold))
-            }
+            PlayfulTicker()
         }.padding(.bottom, 4)
+    }
+    private var playfulTitle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BIG BITES.\nGOOD ENERGY.").font(.system(size: 49, weight: .black, design: .rounded)).tracking(-2).lineSpacing(-5).lineLimit(2).minimumScaleFactor(0.65).fixedSize(horizontal: false, vertical: true)
+            Text(isToday ? "Your daily dose of delicious." : "Rewind the bites. Keep the good stuff.").font(.subheadline).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var daySelector: some View {
         VStack(spacing: 12) {
@@ -322,10 +320,10 @@ struct TodayView: View {
 
     private var emptyJournal: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { PlateSculpture(); Spacer(); Text("THE\nNEXT\nBITE.").font(.system(size: 38, weight: .black)).fontWidth(.condensed).tracking(-1.5) }
-            Text("Something worth recording.").font(.system(.title3, weight: .bold))
-            Text("A photo. A favourite. A meal made yours.").font(.subheadline).foregroundStyle(.secondary)
-            Button { model.showCapture = true } label: { HStack { Text("Make your first entry").font(.subheadline.bold()); Spacer(); Image(systemName: "arrow.up.right") }.padding(16).foregroundStyle(.white).background(Color.plateMint, in: .rect(cornerRadius: 6)) }.buttonStyle(PlatePress())
+            BitePlayground().frame(maxWidth: .infinity)
+            Text("Your next delicious plot twist.").font(.system(.title3, design: .rounded, weight: .black))
+            Text("Drop a photo, tell AI what’s on the plate, and make it yours.").font(.subheadline).foregroundStyle(.secondary)
+            Button { model.showCapture = true } label: { Label("Feed the plot", systemImage: "camera.fill").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(16).foregroundStyle(.white).background(Color.plateCobalt, in: .capsule) }.buttonStyle(PlatePress())
         }.padding(22).plateCard()
     }
     private var quickCapture: some View {
@@ -414,6 +412,7 @@ struct MealDetailView: View {
     @Environment(PlateModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var editing: String?
+    @State private var aiEditing: String?
     @State private var confirmDelete = false
     var body: some View {
         NavigationStack {
@@ -421,16 +420,24 @@ struct MealDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if meal.photoPath != nil { FoodPhoto(path: meal.photoPath).frame(height: 270).clipShape(RoundedRectangle(cornerRadius: 24)) }
                     Text("\(Int(meal.total.calories)) kcal · \(Int(meal.total.protein)) g protein").font(.title2.bold())
+                    Text("Hasil AI adalah draf. Tekan Simpan untuk memperbarui catatan; Batal mempertahankan catatan sebelumnya.").font(.caption).foregroundStyle(.secondary)
                     ForEach(meal.items) { item in
-                        Button { editing = item.id } label: { HStack { VStack(alignment: .leading) { Text(item.name).font(.headline); Text("\(item.quantity.formatted()) × \(item.servingDescription)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(Int(item.total.calories)) kcal") }.padding(18).plateCard() }.buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button { editing = item.id } label: { HStack { VStack(alignment: .leading) { Text(item.name).font(.headline); Text("\(item.quantity.formatted()) × \(item.servingDescription)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(Int(item.total.calories)) kcal"); Image(systemName: "slider.horizontal.3") }.padding(18).plateCard() }.buttonStyle(.plain)
+                            HStack {
+                                Button("Edit dengan AI", systemImage: "sparkles") { aiEditing = item.id }.buttonStyle(.bordered)
+                                if !(item.needsReviewFields ?? []).isEmpty { Button("Periksa hasil") { editing = item.id }.foregroundStyle(.orange) }
+                            }.font(.caption.bold())
+                        }
                     }
                     Button("Repeat this meal", systemImage: "arrow.clockwise") { model.repeatMeal(meal); dismiss() }.buttonStyle(.borderedProminent).tint(Color.plateMint)
                     Button("Save foods to My Foods", systemImage: "bookmark") { for item in meal.items { model.store.saveFood(item) }; model.sync.saveAccount(); model.notice = "Saved to My Foods." }
                     Button("Delete meal", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 }.padding(24)
             }.navigationTitle(meal.type.rawValue.capitalized).background(PlateBackground(status: .calm))
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { meal.updatedAt = .now; model.sync.save(meal); dismiss() } } }
-            .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) { if let index = meal.items.firstIndex(where: { $0.id == editing }) { FoodItemEditor(item: $meal.items[index]) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Batal") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Simpan") { meal.updatedAt = .now; model.sync.save(meal); dismiss() }.disabled(!meal.isValid || meal.items.contains { !($0.needsReviewFields ?? []).isEmpty }) } }
+            .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) { if let index = meal.items.firstIndex(where: { $0.id == editing }) { FoodItemEditor(item: $meal.items[index], existingPhotoPath: meal.photoPath) } }
+            .sheet(isPresented: Binding(get: { aiEditing != nil }, set: { if !$0 { aiEditing = nil } })) { if let index = meal.items.firstIndex(where: { $0.id == aiEditing }) { FoodAIRevisionView(item: $meal.items[index], existingPhotoPath: meal.photoPath).environment(model) } }
             .confirmationDialog("Delete this meal?", isPresented: $confirmDelete) { Button("Delete meal", role: .destructive) { model.sync.remove(meal); dismiss() } }
         }
         #if os(macOS)

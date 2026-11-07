@@ -2,7 +2,7 @@
 
 A native SwiftUI food and nutrition tracker for iPhone, iPad, and Mac.
 
-Plate combines photo capture, nutrition-label OCR, editable meal reviews, and daily calorie and macro tracking. Its original visual identity takes cues from editorial food journals and printed nutrition labels: bold condensed type, cobalt ink, warm paper, precise rules and a plate-shaped signature. Native Liquid Glass navigation remains part of the Apple platform experience.
+Plate combines food photos, descriptions, nutrition-label OCR, editable AI reviews and daily nutrition tracking. Its playful identity includes original animated food characters, draggable stickers, tap bursts, a moving type strip, spring interactions and an interactive macro pie. Native Liquid Glass navigation remains part of the Apple platform experience.
 
 ## Features
 
@@ -65,7 +65,7 @@ swift test --filter PlateCoreTests
 node --test Firebase/functions/totals.test.js
 ```
 
-The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 15.
+The app targets can be built with the `Plate` and `PlateMac` Xcode schemes after configuring Firebase and signing. The latest interface update is version 1.0.0, build 16.
 
 See [the UI comparison](Documentation/UI_COMPARISON.md) for the earlier interaction update and Google sign-in crash fix (historical). Build 15 replaces that visual direction with Plate’s own identity.
 
@@ -83,4 +83,6 @@ Today’s warning banner is in Indonesian, reports the exact remaining or excess
 
 The Today title opens a date picker, and a seven-day strip lets you revisit previous records. Selecting a day updates meals, totals, the macro hero, warnings and summaries together. Return to Today resumes the live day, including midnight rollover. Historical comparisons use currently configured targets and the selected date’s stored training-day flag. Browsing dates never changes meal timestamps or today’s training flag.
 
-See [Plate’s visual identity](Documentation/PLATE_IDENTITY.md) for the original build 15 design.
+See [Plate’s visual identity](Documentation/PLATE_IDENTITY.md) for the original build 16 design.
+
+Build 16 adds an explicit photo + description composer and **Edit with AI** on each draft or logged food. AI edits are previews; applying updates that food’s draft, and saving a logged meal is explicit. Cancel preserves the stored record. Results identify when the optional Flash Lite fallback was used after provider quota/capacity errors. See [photo and AI editing](Documentation/PHOTO_AND_AI_EDITING.md).

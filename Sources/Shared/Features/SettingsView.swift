@@ -60,6 +60,7 @@ struct SettingsView: View {
     @State private var separateTraining = false
     @State private var healthEnabled = UserDefaults.standard.bool(forKey: "healthEnabled")
     @AppStorage("cloudRecognitionAllowed") private var cloudAllowed = true
+    @AppStorage("aiFastFallbackAllowed") private var fastFallback = true
     @AppStorage("geminiModel") private var geminiModel = RecognitionModel.advanced
     @State private var saved = false
     private var valid: Bool { targets.nutrients.isValid && targets.nutrients.calories > 0 && targets.nutrients.protein > 0 && (0.5...1).contains(targets.warningFraction) && targets.tolerance >= 0 }
@@ -92,8 +93,10 @@ struct SettingsView: View {
                     SectionEyebrow(text: "Recognition")
                     Toggle("Analisis foto dengan AI cloud", isOn: $cloudAllowed).tint(Color.plateMint)
                     Text("Foto makanan dianalisis lebih teliti dengan Gemini Flash, termasuk masakan Indonesia. Foto terkompresi dikirim ke Firebase. Label gizi tetap dibaca di perangkat terlebih dahulu.").font(.caption).foregroundStyle(.secondary)
-                    Text("Mode teliti · Gemini Flash dengan penalaran").font(.subheadline.bold())
-                    DisclosureGroup("Pengaturan model lanjutan") { TextField("Gemini model", text: $geminiModel).textFieldStyle(.roundedBorder); Text("Konfigurasi Flash Lite lama otomatis ditingkatkan ke Flash penuh.").font(.caption).foregroundStyle(.secondary) }
+                    Text("Gemini Flash · foto + deskripsi, penalaran ringkas").font(.subheadline.bold())
+                    Toggle("Model cadangan gratis saat kuota penuh / layanan sibuk", isOn: $fastFallback)
+                    Text("Cadangan memakai Flash Lite dan selalu diberi label pada hasil. Matikan bila hanya ingin Flash penuh.").font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Pengaturan model lanjutan") { TextField("Gemini model", text: $geminiModel).textFieldStyle(.roundedBorder); Text("Konfigurasi Flash lama diperbarui otomatis. Batas penalaran lebih ringkas; waktu jaringan dan kuota tetap memengaruhi kecepatan.").font(.caption).foregroundStyle(.secondary) }
                 }.padding(22).plateCard()
                 VStack(alignment: .leading, spacing: 16) {
                     SectionEyebrow(text: "Evening check-in")
