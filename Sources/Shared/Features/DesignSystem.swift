@@ -77,6 +77,10 @@ enum Motion {
     static let lively = Animation.spring(response: 0.6, dampingFraction: 0.68)
     /// Slow, ambient drift.
     static let drift = Animation.easeInOut(duration: 2.4)
+    /// Moving between days. Everything on Today shares this one curve, so the whole screen turns together.
+    static let turn = Animation.spring(response: 0.62, dampingFraction: 0.88)
+    /// The dial ring and its count: a touch longer than the turn so the number visibly winds to its new value.
+    static let wind = Animation.spring(response: 0.95, dampingFraction: 0.9)
 }
 /// A Liquid Glass panel floating over the aurora. Solid when Reduce Transparency is on.
 /// Every card arrives by rising out of a soft blur, and breathes with the scroll: it eases back and softens
@@ -86,16 +90,15 @@ struct GlassCard: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var arrived = false
     func body(content: Content) -> some View {
-        surface(content)
+        let still = reduced
+        return surface(content)
             .opacity(arrived || reduced ? 1 : 0)
             .blur(radius: arrived || reduced ? 0 : 10)
             .scaleEffect(arrived || reduced ? 1 : 0.96, anchor: .bottom)
             .offset(y: arrived || reduced ? 0 : 14)
             .scrollTransition(.interactive, axis: .vertical) { view, phase in
-                view.scaleEffect(reduced || phase.isIdentity ? 1 : 0.95)
-                    .opacity(reduced || phase.isIdentity ? 1 : 0.6)
-                    .blur(radius: reduced || phase.isIdentity ? 0 : 2)
-                    .offset(y: reduced ? 0 : phase.value * 12)
+                view.scaleEffect(still || phase.isIdentity ? 1 : 0.97)
+                    .offset(y: still ? 0 : phase.value * 8)
             }
             .onAppear { withAnimation(reduced ? nil : Motion.lively.delay(0.05)) { arrived = true } }
     }
@@ -240,7 +243,7 @@ struct SectionEyebrow: View {
     var body: some View {
         HStack(spacing: 7) {
             Circle().fill(Color.plateAccent).frame(width: 6, height: 6)
-            Text(text.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary).lineLimit(1)
+            Text(text.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary).lineLimit(1).contentTransition(.numericText())
         }
     }
 }
@@ -363,6 +366,11 @@ struct PlateDial: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var reach: Double = 0
+    @State private var shownEaten: Double = 0
+    @State private var shownTarget: Double = 0
+    @State private var buzz = 0
+    @State private var alertDay = ""
+    @Environment(\.plateDay) private var day
     @State private var split: Double = 0
     @State private var showRemaining = false
     @State private var tilt = CGSize.zero
@@ -423,15 +431,21 @@ struct PlateDial: View {
         }.buttonStyle(.plain)
             .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { tilt = CGSize(width: max(-60, min(60, $0.translation.width)), height: max(-60, min(60, $0.translation.height))) }.onEnded { _ in withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.6)) { tilt = .zero } })
             .sensoryFeedback(.impact(weight: .light), trigger: pulse)
-            .sensoryFeedback(.warning, trigger: alert) { _, new in new != .room }
+            .onChange(of: alert) { old, new in
+                if day == alertDay, new.severity > old.severity { buzz += 1 }
+                alertDay = day
+            }
+            .sensoryFeedback(.warning, trigger: buzz)
             .onAppear {
-                guard !reduced else { reach = eaten / max(1, target); split = 1; return }
+                alertDay = day
+                guard !reduced else { reach = eaten / max(1, target); shownEaten = eaten; shownTarget = target; split = 1; return }
                 breathe = true
-                withAnimation(.spring(response: 1.6, dampingFraction: 0.85).delay(0.2)) { reach = eaten / max(1, target) }
+                shownTarget = target
+                withAnimation(.spring(response: 1.6, dampingFraction: 0.88).delay(0.2)) { reach = eaten / max(1, target); shownEaten = eaten }
                 withAnimation(.spring(response: 1.4, dampingFraction: 0.85).delay(0.5)) { split = 1 }
             }
-            .onChange(of: eaten) { _, new in withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.8)) { reach = new / max(1, target) } }
-            .onChange(of: target) { _, new in withAnimation(reduced ? nil : .spring(response: 1, dampingFraction: 0.8)) { reach = eaten / max(1, new) } }
+            .onChange(of: eaten) { _, new in withAnimation(reduced ? nil : Motion.wind) { reach = new / max(1, target); shownEaten = new } }
+            .onChange(of: target) { _, new in withAnimation(reduced ? nil : Motion.wind) { reach = eaten / max(1, new); shownTarget = new } }
             .accessibilityLabel("\(Int(eaten)) of \(Int(target)) calories across \(meals.count) \(meals.count == 1 ? "meal" : "meals"). Tap to switch between eaten and remaining.")
     }
     @ViewBuilder private var disc: some View {
@@ -443,12 +457,14 @@ struct PlateDial: View {
         let radius = side / 2 - 22
         return ZStack {
             Circle().stroke(Color.primary.opacity(0.07), lineWidth: 18).padding(13)
-            Circle().trim(from: 0, to: fill)
-                .stroke(AngularGradient(colors: [.ube, .bubble, .chili, .butter], center: .center, startAngle: .degrees(0), endAngle: .degrees(360 * max(0.05, fill))), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+            Circle().trim(from: 0, to: max(0.0001, fill))
+                .stroke(AngularGradient(colors: [.ube, .bubble, .chili, .butter, .ube], center: .center), style: StrokeStyle(lineWidth: 18, lineCap: .round))
                 .rotationEffect(.degrees(-90)).padding(13)
+                // Fades out as it nears zero so an empty day never shows a stray dot.
+                .opacity(min(1, fill / 0.03))
             // The tip of the ring.
             Circle().fill(.white).frame(width: 8, height: 8)
-                .offset(y: -radius).rotationEffect(.degrees(fill * 360)).opacity(fill > 0.02 ? 1 : 0)
+                .offset(y: -radius).rotationEffect(.degrees(fill * 360)).opacity(min(1, max(0, (fill - 0.02) / 0.03)))
             // Past the target, a thin red ring traces the overflow.
             Circle().trim(from: 0, to: min(1, max(0, reach - 1)))
                 .stroke(Color.overRed, style: StrokeStyle(lineWidth: 5, lineCap: .round))
@@ -472,11 +488,12 @@ struct PlateDial: View {
     private var center: some View {
         let remaining = target - eaten
         return VStack(spacing: 2) {
-            Text(Int((showRemaining ? abs(remaining) : eaten).rounded()), format: .number)
+            // Counts to the new value in step with the ring instead of swapping digits.
+            CountingNumber(value: showRemaining ? abs(shownTarget - shownEaten) : shownEaten)
                 .font(.system(size: 50, weight: .bold, design: .rounded)).tracking(-1.5)
-                .contentTransition(.numericText(value: showRemaining ? remaining : eaten)).lineLimit(1).minimumScaleFactor(0.5)
+                .lineLimit(1).minimumScaleFactor(0.5)
             Text(showRemaining ? (remaining < 0 ? "kcal over" : "kcal left") : "kcal eaten").font(.footnote.weight(.semibold)).foregroundStyle(tint)
-            Text("of \(Int(target))").font(.caption2).foregroundStyle(.secondary)
+            Text("of \(Int(target))").font(.caption2).foregroundStyle(.secondary).contentTransition(.numericText(value: target))
         }.frame(width: side - 110)
     }
 }
@@ -523,7 +540,10 @@ struct NutrientTile: View {
     let target: Double
     let tint: Color
     @State private var grown = false
+    @State private var shake = 0
+    @State private var shakeDay = ""
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.plateDay) private var day
     private var state: LimitState { LimitState(value: value, target: target) }
     private var caption: String {
         switch state {
@@ -547,8 +567,8 @@ struct NutrientTile: View {
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(Int(value), format: .number).font(.system(size: 26, weight: .bold, design: .rounded)).tracking(-0.5)
-                    .lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
+                CountingNumber(value: value).font(.system(size: 26, weight: .bold, design: .rounded)).tracking(-0.5)
+                    .lineLimit(1).minimumScaleFactor(0.6)
                 Text("g").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             }
             GeometryReader { geometry in
@@ -571,7 +591,7 @@ struct NutrientTile: View {
             }
         }
         .overlay { if state == .over { WarningRipple(color: .overRed, cornerRadius: 28) } }
-        .keyframeAnimator(initialValue: 0.0, trigger: state) { view, x in view.offset(x: x) } keyframes: { _ in
+        .keyframeAnimator(initialValue: 0.0, trigger: shake) { view, x in view.offset(x: x) } keyframes: { _ in
             KeyframeTrack {
                 LinearKeyframe(-7, duration: 0.06)
                 LinearKeyframe(7, duration: 0.08)
@@ -580,10 +600,15 @@ struct NutrientTile: View {
                 SpringKeyframe(0, duration: 0.25)
             }
         }
-        .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.75), value: state)
-        .animation(reduced ? nil : .spring(response: 0.8, dampingFraction: 0.8), value: value)
-        .sensoryFeedback(.warning, trigger: state) { _, new in new != .room }
-        .onAppear { withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.85).delay(0.3)) { grown = true } }
+        .animation(reduced ? nil : Motion.turn, value: state)
+        .animation(reduced ? nil : Motion.wind, value: value)
+        // Shake and buzz only when food pushes this day past a line, never just from flipping to another day.
+        .onChange(of: state) { old, new in
+            if day == shakeDay, new.severity > old.severity { shake += 1 }
+            shakeDay = day
+        }
+        .sensoryFeedback(.warning, trigger: shake)
+        .onAppear { shakeDay = day; withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.85).delay(0.3)) { grown = true } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams. \(caption)")
     }
@@ -778,4 +803,33 @@ private struct FoodBuddy: View {
                 .frame(width: s * 0.34, height: s * 0.34).offset(y: -s * 0.06)
         }.frame(width: s, height: s)
     }
+}
+
+/// A whole number that counts to its new value frame by frame, following whatever animation changed it.
+struct CountingNumber: View, Animatable {
+    var value: Double
+    nonisolated var animatableData: Double { get { value } set { value = newValue } }
+    var body: some View {
+        Text(Int(value.rounded()), format: .number).monospacedDigit()
+    }
+}
+/// Text that rolls glyph by glyph to its new wording, upward when moving forward in time and downward when going back.
+struct RollingText: View {
+    let text: String
+    var back = false
+    var body: some View {
+        Text(text).contentTransition(.numericText(countsDown: back))
+    }
+}
+
+/// The day Today is showing, so pieces of the dashboard can tell "you just logged food" from "you moved to another day".
+private struct PlateDayKey: EnvironmentKey { static let defaultValue = "" }
+extension EnvironmentValues {
+    var plateDay: String {
+        get { self[PlateDayKey.self] }
+        set { self[PlateDayKey.self] = newValue }
+    }
+}
+extension LimitState {
+    var severity: Int { switch self { case .room: 0; case .near: 1; case .over: 2 } }
 }

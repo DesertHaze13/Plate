@@ -164,8 +164,17 @@ struct TodayView: View {
         select(day)
     }
     private func select(_ day: Date) {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.85)) { selectedDay = Calendar.current.startOfDay(for: day) }
+        let target = Calendar.current.startOfDay(for: day)
+        guard target != selectedDay else { return }
+        goingBack = target < selectedDay
+        withAnimation(reduceMotion ? nil : Motion.turn) { selectedDay = target }
     }
+    /// True while moving to an earlier day: text rolls downward, forward rolls upward.
+    @State private var goingBack = false
+    /// The day the last celebration or warning belonged to, so flipping days never fires them.
+    @State private var feedbackDay = ""
+    @State private var warn = 0
+    private var dayKey: String { DayKey.make(selectedDay) }
     @State private var storyMode = 0
     @State private var mealFilter = 0
     private var visibleMeals: [Meal] { dayMeals.filter { mealFilter == 0 || $0.type == MealType.allCases[mealFilter - 1] } }
@@ -197,7 +206,7 @@ struct TodayView: View {
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
             FloatingDayHeader(title: Self.title(for: selectedDay), selectedDay: selectedDay, isToday: isToday,
-                              loggedDays: model.store.loggedDays, total: { model.store.total(on: $0).calories },
+                              loggedDays: model.store.loggedDays, goingBack: goingBack, total: { model.store.total(on: $0).calories },
                               select: select, step: step, openSettings: openSettings)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 4)
         }
@@ -215,12 +224,16 @@ struct TodayView: View {
             MealDetailView(meal: meal).environment(model)
             #endif
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.85), value: mealFilter)
-        .onChange(of: mealCount) { old, new in if new > old && overages.isEmpty { burst += 1 } }
-        .onChange(of: dayGuidance.state) { _, state in if state == .hit && overages.isEmpty { burst += 1 } }
-        .animation(reduceMotion ? nil : .spring(response: 0.55, dampingFraction: 0.8), value: mealCount)
-        .sensoryFeedback(.success, trigger: dayGuidance.state == .hit && overages.isEmpty)
-        .sensoryFeedback(.warning, trigger: overages.map(\.id))
+        .animation(reduceMotion ? nil : Motion.turn, value: mealFilter)
+        .environment(\.plateDay, dayKey)
+        // Bursts and buzzes only answer food you log, not a change of day.
+        .onChange(of: mealCount) { old, new in if dayKey == feedbackDay, new > old, overages.isEmpty { burst += 1 } }
+        .onChange(of: dayGuidance.state) { _, state in if dayKey == feedbackDay, state == .hit, overages.isEmpty { burst += 1 } }
+        .onChange(of: overages.map(\.id)) { old, new in if dayKey == feedbackDay, new.count > old.count { warn += 1 } }
+        .onChange(of: dayKey, initial: true) { _, key in Task { @MainActor in feedbackDay = key } }
+        .animation(reduceMotion ? nil : Motion.turn, value: mealCount)
+        .sensoryFeedback(.success, trigger: burst)
+        .sensoryFeedback(.warning, trigger: warn)
     }
     private var todayContent: some View {
         GeometryReader { geometry in
@@ -272,10 +285,6 @@ struct TodayView: View {
             HStack {
                 SectionEyebrow(text: isToday ? "Your days" : "Looking back")
                 Spacer()
-                if !isToday {
-                    Button { select(.now) } label: { Label("Back to today", systemImage: "arrow.uturn.forward").font(.caption.weight(.semibold)) }
-                        .buttonStyle(.glass).tint(Color.plateAccent).transition(.scale.combined(with: .opacity))
-                }
             }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -291,7 +300,14 @@ struct TodayView: View {
                                 }
                                 .foregroundStyle(selected ? AnyShapeStyle(.white) : hasMeals ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
                                 .frame(width: 48, height: 68)
-                                .background { if selected { Capsule().fill(.clear).glassEffect(Glass.regular.tint(Color.plateAccent).interactive(), in: .capsule).matchedGeometryEffect(id: "selected-day", in: dayStripNamespace) } }
+                                // One crisp pill that glides to the chosen day (a solid fill morphs cleanly; glass smeared mid-flight).
+                                .background {
+                                    if selected {
+                                        Capsule().fill(LinearGradient(colors: [Color.ube, Color.ube.mix(with: .bubble, by: 0.35)], startPoint: .top, endPoint: .bottom))
+                                            .overlay(Capsule().strokeBorder(.white.opacity(0.35), lineWidth: 1))
+                                            .matchedGeometryEffect(id: "selected-day", in: dayStripNamespace)
+                                    }
+                                }
                                 .contentShape(Capsule())
                             }.buttonStyle(PlatePress()).id(day)
                                 .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted))\(hasMeals ? ", \(Int(model.store.total(on: day).calories)) calories" : ", nothing logged")")
@@ -301,7 +317,7 @@ struct TodayView: View {
                 }
                 .defaultScrollAnchor(.trailing)
                 .glassEffect(.regular, in: .rect(cornerRadius: 30))
-                .onChange(of: selectedDay) { _, day in withAnimation(reduceMotion ? nil : .smooth) { proxy.scrollTo(day, anchor: .center) } }
+                .onChange(of: selectedDay) { _, day in withAnimation(reduceMotion ? nil : Motion.turn) { proxy.scrollTo(day, anchor: .center) } }
             }
         }
     }
@@ -323,8 +339,9 @@ struct TodayView: View {
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 4)
     }
     private var dateChip: some View {
-        Text(selectedDay, format: .dateTime.weekday(.wide).day().month(.wide))
+        Text(selectedDay.formatted(.dateTime.weekday(.wide).day().month(.wide)))
             .font(.footnote.weight(.semibold))
+            .contentTransition(.numericText(countsDown: goingBack))
             .padding(.horizontal, 14).padding(.vertical, 8)
             .glassEffect(.regular, in: .capsule)
     }
@@ -452,12 +469,12 @@ struct TodayView: View {
         let warning = state == .almost || state == .over || !macroOvers.isEmpty
         return HStack(alignment: .center, spacing: 12) {
             Image(systemName: info.icon).font(.system(size: 19, weight: .bold)).foregroundStyle(tint)
+                .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
                 .frame(width: 42, height: 42).background(tint.opacity(0.16), in: .circle)
                 .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion && warning)
-                .symbolEffect(.bounce, value: state)
             VStack(alignment: .leading, spacing: 2) {
-                Text(info.title).font(.headline)
-                Text(info.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(2).contentTransition(.numericText())
+                Text(info.title).font(.headline).contentTransition(.numericText(countsDown: goingBack))
+                Text(info.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(2).contentTransition(.numericText(countsDown: goingBack))
                 if !macroOvers.isEmpty {
                     Text(macroOvers.map { "\($0.name) +\(Int($0.excess.rounded(.up))) \($0.unit)" }.joined(separator: " · "))
                         .font(.caption.weight(.bold)).foregroundStyle(Color.overRed)
@@ -468,10 +485,8 @@ struct TodayView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint.opacity(warning ? 0.16 : 0.08), in: .rect(cornerRadius: 22, style: .continuous))
-        .overlay { if state == .over || !macroOvers.isEmpty { WarningRipple(color: .overRed, cornerRadius: 22) } }
-        .id(state)
-        .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
-        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: state)
+        .overlay { if state == .over || !macroOvers.isEmpty { WarningRipple(color: .overRed, cornerRadius: 22).transition(.opacity) } }
+        .animation(reduceMotion ? nil : Motion.turn, value: state)
         .accessibilityElement(children: .combine)
     }
     private var dashboardHeader: some View {
@@ -487,7 +502,7 @@ struct TodayView: View {
             }
         }.padding(20)
             .plateCard()
-            .animation(reduceMotion ? nil : .spring(response: 0.7), value: dayTotal)
+            .animation(reduceMotion ? nil : Motion.turn, value: dayTotal)
     }
 }
 
@@ -499,6 +514,7 @@ private struct FloatingDayHeader: View {
     let selectedDay: Date
     let isToday: Bool
     let loggedDays: [Date]
+    var goingBack = false
     let total: @MainActor (Date) -> Double
     let select: @MainActor (Date) -> Void
     let step: @MainActor (Int) -> Void
@@ -527,7 +543,7 @@ private struct FloatingDayHeader: View {
                 }
             }
         }
-        .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.78), value: isToday)
+        .animation(reduced ? nil : Motion.turn, value: isToday)
         .frame(maxWidth: .infinity)
         .onAppear { guard !reduced else { return }; withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { turning = true } }
     }
@@ -548,8 +564,7 @@ private struct FloatingDayHeader: View {
                     .frame(width: 12, height: 12)
                     .rotationEffect(.degrees(turning ? 360 : 0))
                 Text(title).font(.headline).lineLimit(1)
-                    .id(title)
-                    .transition(.blurReplace)
+                    .contentTransition(.numericText(countsDown: goingBack))
                 Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                     .symbolEffect(.bounce, value: title)
             }
