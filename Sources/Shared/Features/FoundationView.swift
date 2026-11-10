@@ -22,7 +22,9 @@ struct FoundationView: View {
     var body: some View {
         Group {
             #if os(iOS)
-            if sizeClass == .compact { tabs } else { split }
+            // iPhone: Liquid Glass tab bar. iPad: the same tabs float as a glass bar at the top,
+            // and expand into a sidebar, exactly like Apple's own apps.
+            tabs
             #else
             split
             #endif
@@ -98,14 +100,18 @@ struct FoundationView: View {
     /// The system iOS 26 tab bar, so it gets real Liquid Glass: press and slide across it and the lens magnifies the tabs.
     /// "Log" uses the search role, which iOS draws as its own round glass button beside the bar.
     private var tabs: some View {
-        TabView(selection: tabSelection) {
-            ForEach(Destination.allCases.filter { $0 != .settings }) { item in
-                Tab(LocalizedStringKey(item == .foods ? "Foods" : item.rawValue), systemImage: item.icon, value: TabChoice.page(item)) {
+        let compact = sizeClass == .compact
+        return TabView(selection: tabSelection) {
+            // On iPhone, Settings lives behind a toolbar button; on iPad it is a tab like the rest.
+            ForEach(Destination.allCases.filter { !compact || $0 != .settings }) { item in
+                Tab(LocalizedStringKey(item == .foods && compact ? "Foods" : item.rawValue), systemImage: item.icon, value: TabChoice.page(item)) {
                     NavigationStack {
                         screen(item)
                             .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    Button("Settings", systemImage: "slider.horizontal.3") { showSettings = true }
+                                if compact && item != .today {
+                                    ToolbarItem(placement: .topBarTrailing) {
+                                        Button("Settings", systemImage: "slider.horizontal.3") { showSettings = true }
+                                    }
                                 }
                             }
                     }
@@ -115,6 +121,24 @@ struct FoundationView: View {
             Tab("Log a meal", systemImage: "camera.fill", value: TabChoice.capture, role: .search) {
                 Color.clear
             }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .tabViewSidebarHeader {
+            HStack(spacing: 12) {
+                PlateMark(size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PLATE").font(.system(size: 18, weight: .black, design: .rounded)).tracking(2.5)
+                    Text("Good energy, daily.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.padding(.vertical, 8)
+        }
+        .tabViewSidebarFooter {
+            VStack(alignment: .leading, spacing: 12) {
+                Button { model.showCapture = true } label: {
+                    Label("Log a meal", systemImage: "camera.fill").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                }.buttonStyle(.glassProminent).tint(Color.plateAccent)
+                Label(model.sync.status, systemImage: model.sync.userID == nil ? "internaldrive" : "checkmark.icloud").font(.caption).foregroundStyle(.secondary)
+            }.padding(.vertical, 8)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
     }
@@ -141,6 +165,7 @@ struct FoundationView: View {
 }
 struct TodayView: View {
     var openSettings: (@MainActor () -> Void)? = nil
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(PlateModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var mealCount: Int { model.store.today.count }
@@ -202,14 +227,38 @@ struct TodayView: View {
         .onChange(of: selectedDay, initial: true) { _, day in model.viewingDay = day }
         #if os(iOS)
         .toolbarTitleDisplayMode(.inline)
-        // No blurred bar: the title becomes a floating Liquid Glass header over the content.
-        .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        .modifier(TodayChrome(compact: sizeClass == .compact, header: {
+            // iPhone: no blurred bar; the title becomes a floating Liquid Glass header over the content.
             FloatingDayHeader(title: Self.title(for: selectedDay), selectedDay: selectedDay, isToday: isToday,
                               loggedDays: model.store.loggedDays, goingBack: goingBack, total: { model.store.total(on: $0).calories },
                               select: select, step: step, openSettings: openSettings)
                 .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 4)
-        }
+        }, items: {
+            // iPad: the same controls join the top row beside the floating tab bar, as glass toolbar buttons.
+            ToolbarItemGroup(placement: .topBarLeading) {
+                Button("Previous day", systemImage: "chevron.left") { step(-1) }
+                Menu {
+                    Button("Today", systemImage: "sun.max") { select(.now) }
+                    Section("Logged days") {
+                        ForEach(model.store.loggedDays.prefix(60), id: \.self) { day in
+                            Button { select(day) } label: {
+                                Label("\(Self.title(for: day)) · \(Int(model.store.total(on: day).calories)) kcal", systemImage: Calendar.current.isDate(day, inSameDayAs: selectedDay) ? "checkmark" : "calendar")
+                            }
+                        }
+                    }
+                } label: {
+                    Text(Self.title(for: selectedDay)).font(.headline).contentTransition(.numericText(countsDown: goingBack))
+                }
+                Button("Next day", systemImage: "chevron.right") { step(1) }.disabled(isToday)
+            }
+            if !isToday {
+                ToolbarSpacer(.fixed, placement: .topBarLeading)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back to today", systemImage: "arrow.uturn.backward") { select(.now) }
+                        .buttonStyle(.glassProminent).tint(Color.plateAccent)
+                }
+            }
+        }))
         #endif
         .sheet(isPresented: $typingMeal) {
             DescribeFoodSheet(original: nil, photo: nil) { foods in
@@ -771,4 +820,24 @@ struct DailySummaryCard: View {
 
 #if os(iOS)
 private enum TabChoice: Hashable { case page(Destination), capture }
+#endif
+
+#if os(iOS)
+/// iPhone shows Today's day controls as a floating glass header; iPad puts them in the top bar row next to the floating tabs.
+private struct TodayChrome<Header: View, Items: ToolbarContent>: ViewModifier {
+    let compact: Bool
+    @ViewBuilder let header: () -> Header
+    @ToolbarContentBuilder let items: () -> Items
+    func body(content: Content) -> some View {
+        if compact {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) { header() }
+        } else {
+            content
+                .toolbar(removing: .title)
+                .toolbar { items() }
+        }
+    }
+}
 #endif
