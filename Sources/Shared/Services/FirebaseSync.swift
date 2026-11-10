@@ -18,6 +18,8 @@ import PlateCore
 @MainActor @Observable final class FirebaseSync {
     private(set) var status = "On this device"
     private(set) var userID: String?
+    /// False until we know who is signed in and whether they already have a profile, so the welcome sheet never flashes on launch.
+    private(set) var accountReady = false
     private(set) var error: String?
     let configured: Bool
     private var authHandle: AuthStateDidChangeListenerHandle?
@@ -28,7 +30,7 @@ import PlateCore
     init(store: MealStore) {
         self.store = store
         configured = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil
-        guard configured else { return }
+        guard configured else { accountReady = true; return }
         if FirebaseApp.app() == nil {
             AppCheck.setAppCheckProviderFactory(PlateAppCheckFactory())
             FirebaseApp.configure()
@@ -47,6 +49,8 @@ import PlateCore
         mealListener?.remove(); mealListener = nil
         accountListeners.forEach { $0.remove() }; accountListeners = []
         userID = uid; store.load(account: uid)
+        // Signed out, or this device already knows the profile: decide now. Otherwise wait for the cloud profile.
+        accountReady = uid == nil || store.account.onboarded
         guard let uid else { status = "Sign in to sync"; return }
         status = "Connecting…"
         observeAccount(uid: uid)
@@ -69,13 +73,14 @@ import PlateCore
         let root = Firestore.firestore().collection("users").document(uid)
         func observe<T: Decodable & Sendable>(_ collection: String, as type: T.Type, apply: @escaping @MainActor (MealStore, [T]) -> Void) {
             let listener = root.collection(collection).addSnapshotListener { [weak self] snapshot, error in
-                if let error { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = message }; return }
+                if let error { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = message; if collection == "profile" { self?.accountReady = true } }; return }
                 guard let snapshot else { return }
                 do {
                     let values = try snapshot.documents.map { try $0.data(as: T.self, with: .estimate) }
                     Task { @MainActor [weak self] in
                         guard let self, self.userID == uid else { return }
                         apply(self.store, values); self.store.persistAccount()
+                        if collection == "profile" { self.accountReady = true }
                     }
                 } catch { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = message } }
             }
@@ -200,6 +205,7 @@ import PlateCore
     let configured = false
     let status = "On this device"
     let userID: String? = nil
+    let accountReady = true
     var error: String?
     private let store: MealStore
     init(store: MealStore) { self.store = store }

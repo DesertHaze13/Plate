@@ -35,16 +35,16 @@ struct FoundationView: View {
         .alert("Plate", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) { Button("OK") { model.notice = nil } } message: { Text(model.notice ?? "") }
         .task { await model.refreshHealth() }
         .task {
-            model.showOnboarding = !model.store.account.onboarded
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 if Task.isCancelled { break }
                 model.store.refreshClock()
             }
         }
-        .onChange(of: model.store.account.onboarded) { _, done in if done { model.showOnboarding = false } }
+        // Only ask for a profile once we actually know there isn't one (not while the saved account is still loading).
+        .onChange(of: model.sync.accountReady && !model.store.account.onboarded, initial: true) { _, needed in model.showOnboarding = needed }
         .onChange(of: model.connectivity.online) { _, online in if online { Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
-        .onChange(of: model.sync.userID) { _, uid in if uid != nil { model.showOnboarding = !model.store.account.onboarded; Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
+        .onChange(of: model.sync.userID) { _, uid in if uid != nil { Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.store.refreshClock(); model.store.publishWidget(); checkCaptureRequest(); Task { await SummaryNotifications.schedule(store: model.store); await PhotoOutbox.shared.flush(sync: model.sync); await model.refreshHealth() } } }
         .onChange(of: model.store.meals) { _, _ in Task { await model.syncMealsToHealth() } }
         .onOpenURL { model.handleURL($0) }
