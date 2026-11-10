@@ -77,6 +77,15 @@ struct AccountState: Codable {
     var today: [Meal] { meals.filter { Calendar.current.isDate($0.timestamp, inSameDayAs: clock) } }
     var todayTotal: Nutrients { today.reduce(.zero) { $0 + $1.total } }
     var guidance: DailyGuidance { DailyGuidance(eaten: todayTotal, target: effectiveTargets) }
+    func meals(on day: Date) -> [Meal] { meals.filter { Calendar.current.isDate($0.timestamp, inSameDayAs: day) } }
+    func total(on day: Date) -> Nutrients { meals(on: day).reduce(.zero) { $0 + $1.total } }
+    /// The targets that applied on a given day, including training-day targets and the calorie ceiling.
+    func targets(on day: Date) -> Targets {
+        let training = (account.settings.trainingDayKeys ?? []).contains(DayKey.make(day))
+        return (training ? account.settings.trainingDayTargets ?? targets : targets).capped(at: account.profile.dailyCalorieCeiling)
+    }
+    /// Days with at least one meal, newest first.
+    var loggedDays: [Date] { Array(Set(meals.map { Calendar.current.startOfDay(for: $0.timestamp) })).sorted(by: >) }
     func saveFood(_ item: FoodItem, barcode: String? = nil) {
         if let index = account.foods.firstIndex(where: { (barcode != nil && $0.barcode == barcode) || $0.item.name.localizedCaseInsensitiveCompare(item.name) == .orderedSame }) {
             account.foods[index].item = item; account.foods[index].updatedAt = .now

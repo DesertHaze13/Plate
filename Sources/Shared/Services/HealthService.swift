@@ -66,17 +66,23 @@ struct EnergyDay: Identifiable, Equatable, Sendable {
         await delete(mealID: meal.id)
         guard let foodType = HKCorrelationType.correlationType(forIdentifier: .food) else { return }
         var foods: [HKObject] = []
-        for item in meal.items {
+        // Sync identifiers let Health keep one copy when the iPhone and iPad both write the same meal.
+        let version = Int(meal.updatedAt.timeIntervalSince1970 * 1000)
+        for (index, item) in meal.items.enumerated() {
             let amounts = item.total
+            let itemID = "plate-\(meal.id)-\(index)"
             let metadata: [String: Any] = [HKMetadataKeyFoodType: item.name, mealKey: meal.id, "PlateMeal": meal.type.rawValue]
             let samples: [HKSample] = nutrients.compactMap { identifier, key, unit -> HKSample? in
                 guard store.authorizationStatus(for: HKQuantityType(identifier)) == .sharingAuthorized else { return nil }
                 let value = amounts[keyPath: key]
                 guard value.isFinite, value > 0 || identifier == .dietaryEnergyConsumed else { return nil }
-                return HKQuantitySample(type: HKQuantityType(identifier), quantity: HKQuantity(unit: unit, doubleValue: value), start: meal.timestamp, end: meal.timestamp, metadata: metadata)
+                var sampleMetadata = metadata
+                sampleMetadata[HKMetadataKeySyncIdentifier] = "\(itemID)-\(identifier.rawValue)"; sampleMetadata[HKMetadataKeySyncVersion] = version
+                return HKQuantitySample(type: HKQuantityType(identifier), quantity: HKQuantity(unit: unit, doubleValue: value), start: meal.timestamp, end: meal.timestamp, metadata: sampleMetadata)
             }
             var foodMetadata = metadata
             if CaffeineEstimate.isCoffee(item.name) { foodMetadata["PlateDrink"] = "coffee" }
+            foodMetadata[HKMetadataKeySyncIdentifier] = itemID; foodMetadata[HKMetadataKeySyncVersion] = version
             foods.append(HKCorrelation(type: foodType, start: meal.timestamp, end: meal.timestamp, objects: Set(samples), metadata: foodMetadata))
         }
         if !foods.isEmpty { try await store.save(foods) }

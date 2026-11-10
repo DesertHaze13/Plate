@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 import PlateCore
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 struct CaptureView: View {
@@ -42,12 +44,12 @@ struct CaptureView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     if let photo {
                         imageReview(photo.full)
-                        Button { markingPhoto = true } label: { Label(excludedRegions.isEmpty ? "Mark food I won’t eat" : "Edit crossed-out areas", systemImage: "pencil.tip.crop.circle") }.buttonStyle(.bordered).disabled(analyzing || saving)
+                        Button { markingPhoto = true } label: { Label(excludedRegions.isEmpty ? "Mark food I won’t eat" : "Edit crossed-out areas", systemImage: "pencil.tip.crop.circle") }.buttonStyle(.glass).disabled(analyzing || saving)
                         Text("Tap a food on the photo to cross it out. For a small part of a mixed plate, mark that area and recheck. Tap a food’s name below to adjust the amount eaten.").font(.caption).foregroundStyle(.secondary)
                     }
                     else { inputOptions }
                     if analyzing {
-                        HStack { ProgressView(); VStack(alignment: .leading) { Text("Reading your plate…").font(.headline); Text("Looking for food, labels and serving sizes.").font(.caption).foregroundStyle(.secondary) } }.padding()
+                        AILoader(title: "Reading your plate…", detail: "Looking for food, labels and serving sizes.")
                     }
                     if let analysis {
                         Label(analysis.kind == .label ? "Read from label" : analysis.kind == .mixed ? "Food + label" : "Review your meal", systemImage: analysis.kind == .label ? "text.viewfinder" : "sparkles").font(.headline)
@@ -67,8 +69,8 @@ struct CaptureView: View {
                     if !analyzing {
                         Button { describing = DescribeTarget(item: nil) } label: {
                             Label(photo == nil && items.isEmpty ? "Describe what you ate" : "Something missing? Describe it", systemImage: "text.bubble.fill").fontWeight(.semibold).frame(maxWidth: .infinity).padding(6)
-                        }.buttonStyle(.borderedProminent).tint(Color.plateAccent)
-                        Button { var item = FoodItem(name: "New food", category: .protein, servingDescription: "1 serving", nutrients: .zero); item.needsReviewFields = ["calories", "protein", "carbs", "fat"]; items.append(item); editingItem = item.id } label: { Label("Add an item manually", systemImage: "plus.circle") }.buttonStyle(.bordered)
+                        }.buttonStyle(.glassProminent).tint(Color.plateAccent)
+                        Button { var item = FoodItem(name: "New food", category: .protein, servingDescription: "1 serving", nutrients: .zero); item.needsReviewFields = ["calories", "protein", "carbs", "fat"]; items.append(item); editingItem = item.id } label: { Label("Add an item manually", systemImage: "plus.circle") }.buttonStyle(.glass)
                     }
                     if !items.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
@@ -81,6 +83,22 @@ struct CaptureView: View {
                 }.padding(24).frame(maxWidth: 720)
             }.frame(maxWidth: .infinity).background(PlateBackground(status: .calm))
             .navigationTitle(photo == nil ? "Your next plate" : "Make it yours")
+            .onAppear {
+                // Logging while looking at another day puts the food on that day.
+                if !Calendar.current.isDateInToday(model.viewingDay) {
+                    mealDate = PlateModel.logTime(for: model.viewingDay)
+                    mealType = MealType.guess(at: mealDate)
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !Calendar.current.isDate(mealDate, inSameDayAs: .now) {
+                    Label("Logging to \(mealDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))", systemImage: "calendar.badge.clock")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .glassEffect(Glass.regular.tint(Color.plateAccent), in: .capsule)
+                        .padding(.vertical, 6)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -136,17 +154,17 @@ struct CaptureView: View {
             Text("Snap your food, a nutrition label, or a menu. You’ll check every item before it’s logged.").foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
             Button { describing = DescribeTarget(item: nil) } label: {
                 VStack(spacing: 4) {
-                    Label("Photo + words to AI", systemImage: "sparkles").font(.headline)
-                    Text("Attach a photo and say what it is; AI breaks it down").font(.caption).opacity(0.85)
+                    Label("Just tell AI what you ate", systemImage: "sparkles").font(.headline)
+                    Text("Type it, like \"Mie Gacoan level 3\". Add a photo only if it's not a known dish").font(.caption).opacity(0.85)
                 }.frame(maxWidth: .infinity).padding(10)
-            }.buttonStyle(.borderedProminent).tint(Color.plateAccent)
+            }.buttonStyle(.glassProminent).tint(Color.plateAccent)
             #if os(iOS)
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                Button { camera = true } label: { Label("Take a photo", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.borderedProminent).tint(Color.plateAccent)
+                Button { camera = true } label: { Label("Take a photo", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.glassProminent).tint(Color.plateAccent)
             }
             #endif
-            PhotosPicker(selection: $picker, matching: .images) { Label("Choose from Photos", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.bordered)
-            Button { importing = true } label: { Label("Import image", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.bordered)
+            PhotosPicker(selection: $picker, matching: .images) { Label("Choose from Photos", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.glass)
+            Button { importing = true } label: { Label("Import image", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.glass)
             #if os(macOS)
             Text("You can also drop an image here.").font(.caption).foregroundStyle(.secondary)
             #endif
@@ -205,8 +223,9 @@ struct CaptureView: View {
                 Button { describing = DescribeTarget(item: item) } label: {
                     Label((item.confidence ?? 1) < 0.75 ? "Not right? Edit with AI" : "Edit with AI", systemImage: "sparkles")
                         .font(.caption.weight(.bold)).padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Color.plateAccent.opacity(0.16), in: .capsule).foregroundStyle(Color.plateAccent)
-                }.buttonStyle(PlatePress())
+                        .foregroundStyle(Color.plateAccent).contentShape(Capsule())
+                }.buttonStyle(.plain)
+                    .glassEffect(Glass.regular.tint(Color.plateAccent.opacity(0.18)).interactive(), in: .capsule)
                     .accessibilityHint("Type what this food is and how much, and Plate re-estimates its nutrition")
             }
             VStack(alignment: .trailing, spacing: 8) {
@@ -221,10 +240,10 @@ struct CaptureView: View {
             Text(label.basis == .per100Grams ? "Label values are per 100 g / ml." : label.basis == .package ? "Label values are per package." : "Label values are per serving.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 ForEach([0.5, 1, 2], id: \.self) { amount in
-                    Button(amount == 0.5 ? "½ serving" : "\(Int(amount)) serving\(amount == 1 ? "" : "s")") { servings = amount; scaleLabel(label.quantity(servings: amount)) }.buttonStyle(.bordered)
+                    Button(amount == 0.5 ? "½ serving" : "\(Int(amount)) serving\(amount == 1 ? "" : "s")") { servings = amount; scaleLabel(label.quantity(servings: amount)) }.buttonStyle(.glass)
                 }
             }
-            if let whole = label.wholePackageQuantity { Button("Whole package") { scaleLabel(whole) }.buttonStyle(.bordered) }
+            if let whole = label.wholePackageQuantity { Button("Whole package") { scaleLabel(whole) }.buttonStyle(.glass) }
             if label.basis == .per100Grams || label.servingGrams != nil {
                 HStack { TextField("Grams / ml", value: $grams, format: .number).textFieldStyle(.roundedBorder); Button("Apply amount") { if grams > 0 { scaleLabel(label.basis == .per100Grams ? grams/100 : grams/(label.servingGrams ?? 100)) } } }
             }
@@ -311,9 +330,16 @@ struct DescribeFoodSheet: View {
     @State private var loadingPhoto = false
     @State private var attachmentTask: Task<Void, Never>?
     @State private var requestTask: Task<Void, Never>?
+    @State private var chatRequestID = UUID()
+    @State private var chatReply = ""
+    @State private var shareChat = false
+    @State private var chatStatus: String?
+    @State private var differentChatPrompt = false
     @FocusState private var focused: Bool
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var referencePhoto: Data? { includePhoto ? (attachedPhoto ?? photo) : nil }
+    /// True when the AI said it doesn't really know the food it was given.
+    private var unsure: Bool { proposed.contains { ($0.confidence ?? 1) < 0.4 || $0.needsReviewFields?.contains("calories") == true } }
     private var canEstimate: Bool { !working && !loadingPhoto && (!trimmed.isEmpty || referencePhoto != nil) }
     private var canApply: Bool { !working && !loadingPhoto && !proposed.isEmpty && Meal(items: proposed).isValid && proposed.allSatisfy { ($0.needsReviewFields ?? []).isEmpty } }
     var body: some View {
@@ -321,25 +347,38 @@ struct DescribeFoodSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let original { Text("Correcting: \(original.name) · \(original.servingDescription)").font(.subheadline).foregroundStyle(.secondary) }
-                    Text(original == nil ? "What did the scan miss?" : "Tell us what it really is.").font(.system(.title2, design: .rounded, weight: .bold))
-                    TextField("e.g. grilled chicken, about 120 g, no sauce", text: $text, axis: .vertical)
+                    Text(original == nil ? "What did you eat?" : "Tell us what it really is.").font(.system(.title2, design: .rounded, weight: .bold))
+                    TextField(original == nil ? "e.g. Mie Gacoan level 3, or Kopi Kenangan Mantan large" : "e.g. grilled chicken, about 120 g, no sauce", text: $text, axis: .vertical)
                         .lineLimit(3...6).textFieldStyle(.roundedBorder).focused($focused).disabled(working)
                         .onChange(of: text) { _, value in
                             if value.count > 600 { text = String(value.prefix(600)) }
-                            proposed = []
+                            proposed = []; resetChat()
                         }
-                    Text("Describe this food and the amount eaten. For missed foods, list each one; you can review them separately.").font(.caption).foregroundStyle(.secondary)
+                    Text("Just type it. Popular dishes, drinks and chain menu items work from the name alone, so a photo is optional. Add one for home cooking or anything unusual. List several foods at once and each becomes its own item.").font(.caption).foregroundStyle(.secondary)
                     photoAttachment
+                    externalChatControls
 
                     Text(cloudAllowed ? "Uses on-device AI when available, with your configured cloud fallback." : "Cloud fallback is off. Uses on-device AI only.").font(.caption2).foregroundStyle(.secondary)
                     if let problem { Label(problem, systemImage: "exclamationmark.circle").foregroundStyle(.orange).font(.callout) }
+                    if working { AILoader(title: "Working out the nutrition…", detail: "Matching menus, portions and recipes") }
                     Button { run() } label: {
                         HStack { if working { ProgressView() }; Label(working ? "Estimating…" : "Estimate nutrition", systemImage: "sparkles") }.frame(maxWidth: .infinity).padding(8)
-                    }.buttonStyle(.borderedProminent).tint(Color.plateAccent).disabled(!canEstimate)
+                    }.buttonStyle(.glassProminent).tint(Color.plateAccent).disabled(!canEstimate)
                     if !proposed.isEmpty {
                         Divider()
                         Text("Review the AI estimate").font(.headline)
                         Text("Nothing has changed yet. Check portions and nutrition, then apply. Other foods stay as they are.").font(.caption).foregroundStyle(.secondary)
+                        if unsure && referencePhoto == nil {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Plate doesn't know this one well", systemImage: "questionmark.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color.butter)
+                                    .symbolEffect(.pulse, options: .repeating)
+                                Text("It's probably not a widely known menu item, so these numbers are a rough guess. Add a photo and estimate again for a better result.").font(.caption).foregroundStyle(.secondary)
+                                PhotosPicker(selection: $photoPicker, matching: .images) { Label("Add a photo", systemImage: "camera.fill").fontWeight(.semibold) }
+                                    .buttonStyle(.glassProminent).tint(Color.butter)
+                            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.butter.opacity(0.14), in: .rect(cornerRadius: 18, style: .continuous))
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                         ForEach(proposed) { food in
                             Button { editingID = food.id } label: {
                                 VStack(alignment: .leading, spacing: 7) {
@@ -347,14 +386,16 @@ struct DescribeFoodSheet: View {
                                     Text(food.servingDescription).font(.subheadline)
                                     Text("\(Int(food.total.calories)) kcal · \(Int(food.total.protein)) g protein · \(Int(food.total.carbs)) g carbs · \(Int(food.total.fat)) g fat").font(.caption)
                                     if !(food.needsReviewFields ?? []).isEmpty { Text("Missing values: tap to enter and confirm them.").font(.caption).foregroundStyle(.orange) }
+                                    else if (food.confidence ?? 1) < 0.4 { Text("Rough guess").font(.caption.weight(.semibold)).foregroundStyle(Color.butter) }
+                                    else if referencePhoto == nil { Label("Known from the name", systemImage: "checkmark.seal.fill").font(.caption.weight(.semibold)).foregroundStyle(Color.matcha) }
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(16).plateCard()
                             }.buttonStyle(.plain)
                         }
                         Button(original == nil ? "Add reviewed foods" : "Apply correction") { onResult(proposed); dismiss() }
-                            .buttonStyle(.borderedProminent).tint(Color.plateAccent).disabled(!canApply)
+                            .buttonStyle(.glassProminent).tint(Color.plateAccent).disabled(!canApply)
                     }
                 }.padding(24)
-            }.navigationTitle(original == nil ? "Add missing food" : "Correct one food")
+            }.navigationTitle(original == nil ? "Describe food" : "Correct one food")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { requestTask?.cancel(); dismiss() } } }
                 .sheet(item: Binding(get: { editingID.map(ItemID.init) }, set: { editingID = $0?.id })) { id in
                     if let index = proposed.firstIndex(where: { $0.id == id.id }) { FoodItemEditor(item: $proposed[index]) }
@@ -383,6 +424,8 @@ struct DescribeFoodSheet: View {
                         catch { problem = error.localizedDescription }
                     }
                 }
+                .onChange(of: includePhoto) { _, _ in resetChat() }
+                .onChange(of: attachedPhoto) { _, _ in resetChat() }
                 .onAppear { focused = true }
                 .onDisappear { requestTask?.cancel(); attachmentTask?.cancel() }
         }
@@ -391,13 +434,63 @@ struct DescribeFoodSheet: View {
         .frame(minWidth: 480, minHeight: 600)
         #endif
     }
+    private var chatPrompt: String { ExternalFoodChat.prompt(id: chatRequestID, description: trimmed, original: original, hasPhoto: referencePhoto != nil) }
+    private func resetChat() { chatReply = ""; chatStatus = nil; differentChatPrompt = false }
+    private func readChatReply(allowDifferentRequest: Bool = false) {
+        do {
+            proposed = try model.recognition.importChatResult(chatReply, requestID: chatRequestID, original: original, allowDifferentRequest: allowDifferentRequest)
+            problem = nil; focused = false; differentChatPrompt = false
+            chatStatus = allowDifferentRequest ? "Hasil prompt lain dimuat untuk ditinjau. Pastikan nama, porsi, dan nilai gizinya cocok sebelum diterapkan." : "Hasil diterima sebagai perkiraan AI eksternal. Periksa porsi dan nilai gizi di bawah sebelum diterapkan."
+        } catch ExternalChatError.differentRequest {
+            differentChatPrompt = true; proposed = []; problem = nil; focused = false
+        } catch {
+            differentChatPrompt = false; proposed = []
+            problem = error is DecodingError ? "Format JSON belum lengkap. Salin seluruh jawaban sesuai prompt." : error.localizedDescription
+        }
+    }
+    private var externalChatControls: some View {
+        DisclosureGroup("Pakai ChatGPT / Gemini tanpa API") {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Gunakan langganan di aplikasi chat kamu. Bagikan prompt dan foto, kirim di ChatGPT atau Gemini, lalu salin seluruh jawaban JSON ke sini. Kuota aplikasi chat tetap berlaku.").font(.caption).foregroundStyle(.secondary)
+                #if os(iOS)
+                Button("Bagikan foto + prompt", systemImage: "square.and.arrow.up") { focused = false; shareChat = true }
+                    .buttonStyle(.glass).disabled(!canEstimate)
+                    .sheet(isPresented: $shareChat) { FoodChatShare(prompt: chatPrompt, photo: referencePhoto) }
+                #else
+                FoodChatMacShare(prompt: chatPrompt, photo: referencePhoto).frame(height: 32).disabled(!canEstimate)
+                #endif
+                Button("Salin prompt", systemImage: "doc.on.doc") {
+                    #if os(iOS)
+                    UIPasteboard.general.string = chatPrompt
+                    #else
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(chatPrompt, forType: .string)
+                    #endif
+                    chatStatus = "Prompt disalin. Kirim ke ChatGPT/Gemini beserta foto bila digunakan."
+                }.disabled(!canEstimate)
+                HStack { Link("Buka ChatGPT", destination: URL(string: "https://chatgpt.com/")!); Link("Buka Gemini", destination: URL(string: "https://gemini.google.com/app")!) }.font(.caption)
+                TextField("Tempel seluruh jawaban JSON dari AI", text: $chatReply, axis: .vertical).lineLimit(4...10).textFieldStyle(.roundedBorder)
+                    .onChange(of: chatReply) { _, value in if value.utf8.count > 200_000 { chatReply = String(value.prefix(50_000)) }; proposed = []; differentChatPrompt = false }
+                Button("Baca hasil & tinjau", systemImage: "checklist") { readChatReply() }
+                    .buttonStyle(.glassProminent).disabled(working || chatReply.isEmpty)
+                if differentChatPrompt {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Penanda prompt berbeda", systemImage: "exclamationmark.triangle").font(.headline)
+                        Text("Ini bisa terjadi setelah formulir dibuka ulang. JSON kamu valid. Pastikan jawaban ini untuk makanan dan porsi yang ingin kamu simpan; lanjutkan untuk memeriksa rinciannya.").font(.caption)
+                        Button("Tinjau hasil ini tetap", systemImage: "checklist") { readChatReply(allowDifferentRequest: true) }.buttonStyle(.glass)
+                    }.foregroundStyle(.orange)
+                }
+                if let chatStatus { Text(chatStatus).font(.caption).foregroundStyle(.secondary) }
+                Text("Plate hanya membaca jawaban yang kamu tempel. Makanan belum disimpan sampai kamu meninjau dan menekan tombol simpan.").font(.caption2).foregroundStyle(.secondary)
+            }.padding(.top, 10)
+        }.padding(16).plateCard().disabled(working || loadingPhoto)
+    }
     private var photoAttachment: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 PhotosPicker(selection: $photoPicker, matching: .images) { Label("Attach photo", systemImage: "photo.badge.plus") }.disabled(working)
                 Spacer()
                 Button("From Files", systemImage: "folder") { importingPhoto = true }.disabled(working)
-            }.buttonStyle(.bordered)
+            }.buttonStyle(.glass)
             if loadingPhoto { ProgressView("Preparing photo…").font(.caption) }
             if attachedPhoto != nil || photo != nil {
                 Toggle("Use reference photo for this estimate", isOn: $includePhoto).disabled(working)
@@ -450,7 +543,7 @@ struct FoodItemEditor: View {
                 Section("Amount eaten") {
                     Stepper(value: $item.quantity, in: 0.01...20, step: 0.01) { Text("\(item.quantity.formatted(.number.precision(.fractionLength(0...2)))) servings") }
                     HStack { ForEach([0.25, 0.5, 0.75, 1.0], id: \.self) { amount in
-                        Button(amount.formatted(.percent) + " serving") { item.quantity = amount }.buttonStyle(.bordered)
+                        Button(amount.formatted(.percent) + " serving") { item.quantity = amount }.buttonStyle(.glass)
                     } }
                     Text("Nutrition scales with the amount you eat. Crossing out a whole item removes it from the meal.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -584,3 +677,41 @@ private struct PhotoExclusionEditor: View {
         return FoodBounds(x: min(x1, x2), y: min(y1, y2), width: abs(x2-x1), height: abs(y2-y1))
     }
 }
+
+#if os(iOS)
+private struct FoodChatShare: UIViewControllerRepresentable {
+    let prompt: String
+    let photo: Data?
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        var items: [Any] = [prompt]
+        if let photo, let image = UIImage(data: photo) { items.append(image) }
+        return UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+#endif
+
+#if os(macOS)
+private struct FoodChatMacShare: NSViewRepresentable {
+    let prompt: String
+    let photo: Data?
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: "Bagikan foto + prompt", target: context.coordinator, action: #selector(Coordinator.share(_:)))
+        button.bezelStyle = .rounded
+        return button
+    }
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.prompt = prompt; context.coordinator.photo = photo
+    }
+    @MainActor final class Coordinator: NSObject {
+        var prompt = ""
+        var photo: Data?
+        @objc func share(_ sender: NSButton) {
+            var items: [Any] = [prompt]
+            if let photo, let image = NSImage(data: photo) { items.append(image) }
+            NSSharingServicePicker(items: items).show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        }
+    }
+}
+#endif

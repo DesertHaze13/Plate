@@ -16,7 +16,7 @@ struct OnboardingView: View {
                     PlatePageTitle(eyebrow: "A FRESH START", title: "Good energy starts here.", subtitle: "A little context. A plan that feels like you.")
                     Text("A little context helps us set your starting targets. You can change every number later.").foregroundStyle(.secondary)
                     if model.sync.configured, model.sync.userID == nil {
-                        Button { Task { await model.sync.signInWithGoogle() } } label: { Label("Continue with Google", systemImage: "person.crop.circle").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.bordered).disabled(model.sync.signingIn)
+                        Button { Task { await model.sync.signInWithGoogle() } } label: { Label("Continue with Google", systemImage: "person.crop.circle").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.glass).disabled(model.sync.signingIn)
                         if let error = model.sync.error { Text(error).font(.caption).foregroundStyle(.orange) }
                     }
                     #if os(iOS)
@@ -25,14 +25,14 @@ struct OnboardingView: View {
                             do { try await model.connectHealth(); if let reading = model.healthProfile { withAnimation(.spring(response: 0.6)) { profile = PlateModel.merge(reading, into: profile) } } }
                             catch { model.notice = error.localizedDescription }
                         }
-                    } label: { Label("Fill in from Apple Health", systemImage: "heart.fill").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.bordered).tint(.pink).plateEntrance(1)
+                    } label: { Label("Fill in from Apple Health", systemImage: "heart.fill").frame(maxWidth: .infinity).padding(8) }.buttonStyle(.glass).tint(.pink).plateEntrance(1)
                     #endif
                     ProfileFields(profile: $profile, metric: $metric).plateEntrance(2)
                     EnergyMathCard(profile: profile).plateEntrance(3)
                     Button {
                         model.store.account.settings.metric = metric
                         model.finishOnboarding(profile: profile, targets: NutritionCalculator.targets(for: profile))
-                    } label: { Text("Make room for progress").fontWeight(.semibold).frame(maxWidth: .infinity).padding(10) }.buttonStyle(.borderedProminent).tint(Color.plateAccent).disabled(!valid)
+                    } label: { Text("Make room for progress").fontWeight(.semibold).frame(maxWidth: .infinity).padding(10) }.buttonStyle(.glassProminent).tint(Color.plateAccent).disabled(!valid)
                 }.padding(28).frame(maxWidth: 620).frame(maxWidth: .infinity)
             }.background(PlateBackground(status: .calm))
         }
@@ -116,7 +116,7 @@ struct SettingsView: View {
                     SectionEyebrow(text: "Across your devices")
                     Label(model.sync.status, systemImage: "icloud").font(.headline)
                     if model.sync.configured {
-                        if model.sync.userID == nil { Button { Task { await model.sync.signInWithGoogle() } } label: { Label(model.sync.signingIn ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle").padding(8) }.buttonStyle(.bordered).disabled(model.sync.signingIn) }
+                        if model.sync.userID == nil { Button { Task { await model.sync.signInWithGoogle() } } label: { Label(model.sync.signingIn ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle").padding(8) }.buttonStyle(.glass).disabled(model.sync.signingIn) }
                         else { Text("Your meals, foods, targets and weight log sync with your Google account.").font(.caption).foregroundStyle(.secondary); Button("Sign out", action: model.sync.signOut) }
                     } else { Text("Firebase configuration is unavailable in this build. Your data is saved on this device.").font(.caption).foregroundStyle(.secondary) }
                     if let error = model.sync.error { Text(error).font(.caption).foregroundStyle(.orange) }
@@ -124,8 +124,8 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     ProfileFields(profile: $profile, metric: $settings.metric)
                     EnergyMathCard(profile: profile)
-                    Button("Reset targets to this calculation") { withAnimation(.spring(response: 0.5)) { recalculate() } }.buttonStyle(.bordered).tint(Color.plateAccent)
-                }.buttonStyle(.bordered)
+                    Button("Reset targets to this calculation") { withAnimation(.spring(response: 0.5)) { recalculate() } }.buttonStyle(.glass).tint(Color.plateAccent)
+                }.buttonStyle(.glass)
                 TargetFields(title: "Daily targets", targets: $targets)
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("Different targets on training days", isOn: $separateTraining).tint(Color.plateAccent)
@@ -162,23 +162,20 @@ struct SettingsView: View {
                         if enabled { Task { do { try await model.connectHealth() } catch { healthEnabled = false; model.notice = error.localizedDescription } } }
                         else { UserDefaults.standard.set(false, forKey: "healthEnabled") }
                     }
-                    Text("Every food you log is saved to Health as a food, with its calories, protein, carbs, fat, fiber and sugar. Coffee and other drinks include caffeine when you enter or confirm its amount. Plate reads your age, sex, height and weight from Health so you don't have to type them, and uses your workouts and energy burned on the Progress screen.").font(.caption).foregroundStyle(.secondary)
+                    Text("Every food you log — here, on your other devices, with Siri or before you connected Health — is saved to Health automatically as a food. Edits and deletions follow too. Each food carries its calories, protein, carbs, fat, fiber and sugar. Coffee and other drinks include caffeine when you enter or confirm its amount. Plate reads your age, sex, height and weight from Health so you don't have to type them, and uses your workouts and energy burned on the Progress screen.").font(.caption).foregroundStyle(.secondary)
                     Text("Health controls its own categories: coffee is saved by name as food, with its dietary caffeine. Missing or unshared Health values remain editable here. Blood pressure is for reference only.").font(.caption).foregroundStyle(.secondary)
                     if healthEnabled, let reading = model.healthProfile, !reading.isEmpty { HealthBodyGrid(reading: reading, metric: settings.metric).transition(.opacity.combined(with: .scale(scale: 0.96))) }
                     if healthEnabled {
+                        Label("Auto-sync on · \(model.healthMealsSynced) of \(model.store.meals.count) meals in Health", systemImage: "checkmark.icloud.fill")
+                            .font(.caption.weight(.semibold)).foregroundStyle(Color.plateAccent)
+                            .contentTransition(.numericText()).animation(.spring(response: 0.5), value: model.healthMealsSynced)
                         HStack {
                             Button("Refresh", systemImage: "arrow.triangle.2.circlepath") { Task { await model.refreshHealth(); model.notice = "Updated from Apple Health." } }
                             Spacer()
-                            Button("Send last 30 days", systemImage: "square.and.arrow.up") {
-                                Task {
-                                    let since = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
-                                    let meals = model.store.meals.filter { $0.timestamp >= since }
-                                    var failed = 0
-                                    for meal in meals { do { try await model.health.write(meal) } catch { failed += 1 } }
-                                    model.notice = failed == 0 ? "Sent \(meals.count) meals to Apple Health." : "Sent \(meals.count - failed) of \(meals.count) meals to Apple Health."
-                                }
+                            Button("Sync all meals now", systemImage: "heart.text.square") {
+                                Task { await model.syncMealsToHealth(); model.notice = "\(model.healthMealsSynced) of \(model.store.meals.count) meals are in Apple Health." }
                             }
-                        }.font(.subheadline)
+                        }.font(.subheadline).buttonStyle(.glass)
                     }
                 }.padding(22).plateCard().animation(reduced ? nil : .spring(response: 0.5), value: model.healthProfile)
                 #endif
@@ -187,7 +184,7 @@ struct SettingsView: View {
                     model.store.account.profile = profile; model.store.targets = targets
                     settings.trainingDayTargets = separateTraining ? trainingTargets.capped(at: profile.dailyCalorieCeiling) : nil; model.store.account.settings = settings
                     model.sync.saveAccount(); saved = true; Task { await SummaryNotifications.schedule(store: model.store) }
-                } label: { Text(saved ? "Saved" : "Save changes").fontWeight(.semibold).frame(maxWidth: .infinity).padding(10) }.buttonStyle(.borderedProminent).tint(Color.plateAccent).disabled(!valid)
+                } label: { Text(saved ? "Saved" : "Save changes").fontWeight(.semibold).frame(maxWidth: .infinity).padding(10) }.buttonStyle(.glassProminent).tint(Color.plateAccent).disabled(!valid)
                 Text("Plate 1.0 · Native on iPhone, iPad and Mac").font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             }.padding(24).frame(maxWidth: 1000).frame(maxWidth: .infinity)
         }.navigationTitle("Settings").background(PlateBackground(status: .calm))
@@ -303,7 +300,7 @@ struct AIAccountsCard: View {
         VStack(alignment: .leading, spacing: 16) {
             SectionEyebrow(text: "Your AI")
             Text("Scan and describe food with your own AI").font(.headline)
-            Text("Add one or more accounts and paste each API key once; it's kept in your Keychain. Plate tries them in this order and switches automatically when one is out of quota or fails. Apple's on-device model is only the last resort.").font(.caption).foregroundStyle(.secondary)
+            Text("Ini koneksi API key, bukan login langganan ChatGPT/Gemini. Kuota dan tagihan API mengikuti akun API masing-masing. Untuk memakai aplikasi chat kamu, buka Add food atau Edit with AI → Pakai ChatGPT / Gemini tanpa API. Kunci disimpan di Keychain.").font(.caption).foregroundStyle(.secondary)
             ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
                 row(index, account).transition(.scale(scale: 0.92).combined(with: .opacity))
             }
@@ -335,7 +332,7 @@ struct AIAccountsCard: View {
                 Button("Move up", systemImage: "arrow.up") { move(index, by: -1) }.labelStyle(.iconOnly).disabled(index == 0)
                 Button("Move down", systemImage: "arrow.down") { move(index, by: 1) }.labelStyle(.iconOnly).disabled(index == accounts.count - 1)
                 Button("Remove", systemImage: "trash", role: .destructive) { remove(account) }.labelStyle(.iconOnly)
-            }.font(.caption).buttonStyle(.bordered)
+            }.font(.caption).buttonStyle(.glass)
             if let message = status[account.id] {
                 Text(message).font(.caption).foregroundStyle(message.hasPrefix("✓") ? Color.celadon : Color.orange).fixedSize(horizontal: false, vertical: true)
             }

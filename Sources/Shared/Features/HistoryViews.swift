@@ -4,6 +4,7 @@ import PlateCore
 
 struct HistoryView: View {
     @Environment(PlateModel.self) private var model
+    @Namespace private var mealZoom
     @State private var date = Date.now
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var selected: Meal?
@@ -24,14 +25,31 @@ struct HistoryView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             HStack { Text(date, format: .dateTime.month(.wide).day()); Spacer(); Text("\(meals.count) \(meals.count == 1 ? "meal" : "meals")").foregroundStyle(.secondary) }.font(.system(.headline, design: .rounded))
                             if meals.isEmpty { ContentUnavailableView("A quiet plate", systemImage: "calendar", description: Text("No meals were logged on this day.")).frame(maxWidth: .infinity).padding(.vertical, 30).plateCard() }
-                            ForEach(meals) { meal in Button { selected = meal } label: { MealCard(meal: meal) }.buttonStyle(PlatePress()) }
+                            ForEach(meals) { meal in
+                                Button { selected = meal } label: {
+                                    #if os(iOS)
+                                    MealCard(meal: meal).matchedTransitionSource(id: meal.id, in: mealZoom)
+                                    #else
+                                    MealCard(meal: meal)
+                                    #endif
+                                }.buttonStyle(PlatePress())
+                                    .transition(.asymmetric(insertion: .push(from: .bottom).combined(with: .opacity), removal: .opacity.combined(with: .scale(scale: 0.95))))
+                            }
                             if !meals.isEmpty { DailySummaryCard(meals: meals, target: model.store.targets) }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }.padding(24).frame(maxWidth: 1200).frame(maxWidth: .infinity)
             }
         }.navigationTitle("History").background(PlateBackground(status: .calm))
-            .sheet(item: $selected) { MealDetailView(meal: $0).environment(model) }
+            .sheet(item: $selected) { meal in
+                #if os(iOS)
+                if reduced { MealDetailView(meal: meal).environment(model) }
+                else { MealDetailView(meal: meal).environment(model).navigationTransition(.zoom(sourceID: meal.id, in: mealZoom)) }
+                #else
+                MealDetailView(meal: meal).environment(model)
+                #endif
+            }
+            .animation(reduced ? nil : Motion.fluid, value: date)
     }
     private var target: Double { model.store.targets.capped(at: model.store.account.profile.calorieCap).nutrients.calories }
     private func kcal(on day: Date) -> Double { HistoryMath.totals(model.store.meals, on: day).calories }
@@ -78,13 +96,14 @@ struct HistoryView: View {
     }
     private var weekStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
+            GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: 10) {
                 ForEach((0..<14).reversed(), id: \.self) { offset in
                     let day = Calendar.current.date(byAdding: .day, value: -offset, to: Date.now) ?? .now
                     let active = Calendar.current.isDate(day, inSameDayAs: date)
                     let logged = hasMeals(on: day)
                     let total = kcal(on: day)
-                    Button { withAnimation(reduced ? nil : .smooth) { date = day } } label: {
+                    Button { withAnimation(reduced ? nil : Motion.fluid) { date = day } } label: {
                         VStack(spacing: 7) {
                             Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold))
                             Text(day, format: .dateTime.day()).font(.system(.title3, design: .rounded, weight: .bold))
@@ -97,13 +116,15 @@ struct HistoryView: View {
                             Text(logged ? (total >= 1000 ? String(format: "%.1fk", total / 1000) : "\(Int(total))") : "–")
                                 .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
                                 .foregroundStyle(logged ? tint(for: total) : .secondary)
-                        }.frame(width: 56).padding(.vertical, 12).background(active ? Color.plateAccent.opacity(0.22) : Color.plateAccent.opacity(0.05), in: .rect(cornerRadius: 20))
-                    }.buttonStyle(PlatePress()).foregroundStyle(.primary)
+                        }.frame(width: 56).padding(.vertical, 12).contentShape(.rect(cornerRadius: 20))
+                    }.buttonStyle(.plain).foregroundStyle(.primary)
+                        .glassEffect(active ? Glass.regular.tint(Color.plateAccent.opacity(0.45)).interactive() : Glass.regular.interactive(), in: .rect(cornerRadius: 20))
                         .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted)), \(logged ? "\(Int(total)) calories" : "nothing logged")")
                         .accessibilityAddTraits(active ? .isSelected : [])
                 }
+            }.padding(.vertical, 2)
             }
-        }.defaultScrollAnchor(.trailing)
+        }.scrollClipDisabled().defaultScrollAnchor(.trailing)
     }
 
     private var comparisonDays: [DayPoint] {
@@ -305,7 +326,7 @@ struct ProgressViewScreen: View {
                 Button("Log weight") {
                     guard let value = Double(weight), value > 0, value.isFinite else { return }
                     model.store.account.weights.append(WeightEntry(kilograms: model.store.account.settings.metric ? value : value/2.2046226218)); model.sync.saveAccount(); weight = ""
-                }.buttonStyle(.bordered).disabled((Double(weight) ?? 0) <= 0)
+                }.buttonStyle(.glass).disabled((Double(weight) ?? 0) <= 0)
             }
         }.padding(22).plateCard()
     }
@@ -333,7 +354,7 @@ struct FoodsView: View {
                 }
                 if !model.store.meals.isEmpty {
                     SectionEyebrow(text: "Repeat a past meal")
-                    ForEach(Array(model.store.meals.prefix(10))) { meal in HStack { MealCard(meal: meal); Button("Repeat", systemImage: "arrow.clockwise") { model.repeatMeal(meal); logged.toggle() }.labelStyle(.iconOnly).buttonStyle(.bordered).accessibilityLabel("Repeat \(meal.items.map(\.name).joined(separator: ", "))") } }
+                    ForEach(Array(model.store.meals.prefix(10))) { meal in HStack { MealCard(meal: meal); Button("Repeat", systemImage: "arrow.clockwise") { model.repeatMeal(meal); logged.toggle() }.labelStyle(.iconOnly).buttonStyle(.glass).accessibilityLabel("Repeat \(meal.items.map(\.name).joined(separator: ", "))") } }
                 }
             }.padding(24).frame(maxWidth: 1200).frame(maxWidth: .infinity)
         }.searchable(text: $query, prompt: "Search foods or barcode").navigationTitle("My Foods").background(PlateBackground(status: .calm)).sensoryFeedback(.success, trigger: logged)

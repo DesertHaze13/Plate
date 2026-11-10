@@ -14,6 +14,7 @@ struct FoundationView: View {
     init(model: PlateModel) { _model = State(initialValue: model) }
     @AppStorage("plateAppearance") private var appearance: PlateAppearance = .system
     @State private var destination: Destination = .today
+    @State private var showSettings = false
     @Namespace private var sidebarSelection
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -28,6 +29,7 @@ struct FoundationView: View {
         }
         .environment(model).tint(Color.plateAccent)
         .preferredColorScheme(appearance.colorScheme)
+        .sheet(isPresented: $showSettings) { SettingsView().environment(model) }
         .sheet(isPresented: $model.showCapture) { CaptureView().environment(model) }
         .sheet(isPresented: $model.showOnboarding) { OnboardingView().environment(model).interactiveDismissDisabled() }
         .alert("Plate", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) { Button("OK") { model.notice = nil } } message: { Text(model.notice ?? "") }
@@ -44,6 +46,7 @@ struct FoundationView: View {
         .onChange(of: model.connectivity.online) { _, online in if online { Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
         .onChange(of: model.sync.userID) { _, uid in if uid != nil { model.showOnboarding = !model.store.account.onboarded; Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.store.refreshClock(); model.store.publishWidget(); checkCaptureRequest(); Task { await SummaryNotifications.schedule(store: model.store); await PhotoOutbox.shared.flush(sync: model.sync); await model.refreshHealth() } } }
+        .onChange(of: model.store.meals) { _, _ in Task { await model.syncMealsToHealth() } }
         .onOpenURL { model.handleURL($0) }
         .onReceive(NotificationCenter.default.publisher(for: .plateCapture)) { _ in model.showCapture = true }
         .dropDestination(for: URL.self) { urls, _ in
@@ -71,7 +74,7 @@ struct FoundationView: View {
                                     Spacer(minLength: 0)
                                     if destination == item { Circle().fill(item.tint).frame(width: 5, height: 5) }
                                 }.padding(12).background {
-                                    if destination == item { RoundedRectangle(cornerRadius: 22).fill(item.tint.opacity(0.12)).overlay(RoundedRectangle(cornerRadius: 22).stroke(item.tint.opacity(0.2))).matchedGeometryEffect(id: "sidebar-selection", in: sidebarSelection) }
+                                    if destination == item { RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.clear).glassEffect(Glass.regular.tint(item.tint.opacity(0.35)).interactive(), in: .rect(cornerRadius: 22)).matchedGeometryEffect(id: "sidebar-selection", in: sidebarSelection) }
                                 }
                             }.buttonStyle(PlatePress()).foregroundStyle(.primary).accessibilityAddTraits(destination == item ? .isSelected : [])
                         }
@@ -92,29 +95,41 @@ struct FoundationView: View {
         .toolbar { ToolbarItem { Button("Log a meal", systemImage: "camera") { model.showCapture = true }.keyboardShortcut("n") } }
     }
     #if os(iOS)
+    /// The system iOS 26 tab bar, so it gets real Liquid Glass: press and slide across it and the lens magnifies the tabs.
+    /// "Log" uses the search role, which iOS draws as its own round glass button beside the bar.
     private var tabs: some View {
-        ZStack {
-            ForEach(Destination.allCases) { item in
-                NavigationStack {
-                    screen(item).toolbarBackground(.visible, for: .navigationBar)
+        TabView(selection: tabSelection) {
+            ForEach(Destination.allCases.filter { $0 != .settings }) { item in
+                Tab(LocalizedStringKey(item == .foods ? "Foods" : item.rawValue), systemImage: item.icon, value: TabChoice.page(item)) {
+                    NavigationStack {
+                        screen(item)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Settings", systemImage: "slider.horizontal.3") { showSettings = true }
+                                }
+                            }
+                    }
+                        .environment(\.plateMotionActive, destination == item)
                 }
-                .environment(\.plateMotionActive, destination == item)
-                .opacity(destination == item ? 1 : 0)
-                .scaleEffect(destination == item || reducedMotion ? 1 : 0.97)
-                .offset(y: destination == item || reducedMotion ? 0 : 12)
-                .allowsHitTesting(destination == item)
-                .accessibilityHidden(destination != item)
-                .zIndex(destination == item ? 1 : 0)
+            }
+            Tab("Log a meal", systemImage: "camera.fill", value: TabChoice.capture, role: .search) {
+                Color.clear
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 12) {
-            PhoneNavigationDock(selection: $destination) { model.showCapture = true }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-        }
+        .tabBarMinimizeBehavior(.onScrollDown)
+    }
+    /// Choosing "Log a meal" opens the camera sheet and leaves you on the tab you were on.
+    private var tabSelection: Binding<TabChoice> {
+        Binding(get: { .page(destination) }, set: { choice in
+            switch choice {
+            case .page(let item): destination = item
+            case .capture: model.showCapture = true
+            }
+        })
     }
     #endif
     @ViewBuilder private func screen(_ item: Destination) -> some View {
-        switch item { case .today: TodayView(); case .history: HistoryView(); case .foods: FoodsView(); case .progress: ProgressViewScreen(); case .settings: SettingsView() }
+        switch item { case .today: TodayView(openSettings: sizeClass == .compact ? { showSettings = true } : nil); case .history: HistoryView(); case .foods: FoodsView(); case .progress: ProgressViewScreen(); case .settings: SettingsView() }
     }
     private func checkCaptureRequest() {
         if UserDefaults(suiteName: SharedSnapshot.appGroup)?.bool(forKey: "openCapture") == true {
@@ -125,22 +140,73 @@ struct FoundationView: View {
     }
 }
 struct TodayView: View {
+    var openSettings: (@MainActor () -> Void)? = nil
     @Environment(PlateModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var mealCount: Int { model.store.today.count }
+    @State private var selectedDay = Calendar.current.startOfDay(for: .now)
+    @Namespace private var dayStripNamespace
+    private var isToday: Bool { Calendar.current.isDate(selectedDay, inSameDayAs: model.store.clock) }
+    private var dayMeals: [Meal] { model.store.meals(on: selectedDay) }
+    private var dayTotal: Nutrients { model.store.total(on: selectedDay) }
+    private var dayTargets: Targets { model.store.targets(on: selectedDay) }
+    private var dayGuidance: DailyGuidance { DailyGuidance(eaten: dayTotal, target: dayTargets) }
+    private var dayWord: String { isToday ? "today" : "that day" }
+    static func title(for day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    }
+    private func step(_ offset: Int) {
+        let calendar = Calendar.current
+        guard let day = calendar.date(byAdding: .day, value: offset, to: selectedDay), calendar.startOfDay(for: day) <= calendar.startOfDay(for: model.store.clock) else { return }
+        select(day)
+    }
+    private func select(_ day: Date) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.85)) { selectedDay = Calendar.current.startOfDay(for: day) }
+    }
     @State private var storyMode = 0
     @State private var mealFilter = 0
-    private var visibleMeals: [Meal] { model.store.today.filter { mealFilter == 0 || $0.type == MealType.allCases[mealFilter - 1] } }
+    private var visibleMeals: [Meal] { dayMeals.filter { mealFilter == 0 || $0.type == MealType.allCases[mealFilter - 1] } }
     @State private var selectedMeal: Meal?
     @State private var burst = 0
+    @State private var typingMeal = false
     @Namespace private var mealNamespace
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body: some View {
         todayContent
-        .background(PlateBackground(status: model.store.guidance.state)).navigationTitle("Today")
+        .background(PlateBackground(status: dayGuidance.state)).navigationTitle(Self.title(for: selectedDay))
+        #if os(iOS)
+        .toolbarTitleMenu {
+            Button("Today", systemImage: "sun.max") { select(.now) }
+            Section("Logged days") {
+                ForEach(model.store.loggedDays.prefix(60), id: \.self) { day in
+                    Button { select(day) } label: {
+                        Label("\(Self.title(for: day)) · \(Int(model.store.total(on: day).calories)) kcal", systemImage: Calendar.current.isDate(day, inSameDayAs: selectedDay) ? "checkmark" : "calendar")
+                    }
+                }
+            }
+        }
+        #endif
+        .sensoryFeedback(.selection, trigger: selectedDay)
+        .onChange(of: selectedDay, initial: true) { _, day in model.viewingDay = day }
         #if os(iOS)
         .toolbarTitleDisplayMode(.inline)
+        // No blurred bar: the title becomes a floating Liquid Glass header over the content.
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            FloatingDayHeader(title: Self.title(for: selectedDay), selectedDay: selectedDay, isToday: isToday,
+                              loggedDays: model.store.loggedDays, total: { model.store.total(on: $0).calories },
+                              select: select, step: step, openSettings: openSettings)
+                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 4)
+        }
         #endif
+        .sheet(isPresented: $typingMeal) {
+            DescribeFoodSheet(original: nil, photo: nil) { foods in
+                Task { await model.saveMeal(Meal(timestamp: PlateModel.logTime(for: selectedDay), items: foods, source: .manual)) }
+            }.environment(model)
+        }
         .sheet(item: $selectedMeal) { meal in
             #if os(iOS)
             if reduceMotion { MealDetailView(meal: meal).environment(model) }
@@ -151,9 +217,9 @@ struct TodayView: View {
         }
         .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.85), value: mealFilter)
         .onChange(of: mealCount) { old, new in if new > old && overages.isEmpty { burst += 1 } }
-        .onChange(of: model.store.guidance.state) { _, state in if state == .hit && overages.isEmpty { burst += 1 } }
+        .onChange(of: dayGuidance.state) { _, state in if state == .hit && overages.isEmpty { burst += 1 } }
         .animation(reduceMotion ? nil : .spring(response: 0.55, dampingFraction: 0.8), value: mealCount)
-        .sensoryFeedback(.success, trigger: model.store.guidance.state == .hit && overages.isEmpty)
+        .sensoryFeedback(.success, trigger: dayGuidance.state == .hit && overages.isEmpty)
         .sensoryFeedback(.warning, trigger: overages.map(\.id))
     }
     private var todayContent: some View {
@@ -165,26 +231,27 @@ struct TodayView: View {
                         masthead(wide: wide)
                         if wide { CaptureButton { model.showCapture = true } }
                     }
+                    dayStrip
                     let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 24)) : AnyLayout(VStackLayout(spacing: 24))
                     layout {
                         VStack(spacing: 22) {
                             dashboardHeader.plateEntrance(0)
                             quickCapture.plateEntrance(1)
-                            if !model.energyDays.isEmpty { MovementCard().plateEntrance(2) }
-                            if wide { DailySummaryCard(meals: model.store.today, target: model.store.effectiveTargets) }
+                            if isToday && !model.energyDays.isEmpty { MovementCard().plateEntrance(2) }
+                            if wide { DailySummaryCard(meals: dayMeals, target: dayTargets) }
                         }.frame(maxWidth: .infinity)
                         VStack(alignment: .leading, spacing: 18) {
                             dayStory.plateEntrance(2)
                             HStack {
                                 VStack(alignment: .leading, spacing: 5) { SectionEyebrow(text: "02 / THE FOOD JOURNAL"); Text("What made the day.").font(.system(.title, design: .rounded, weight: .bold)) }
                                 Spacer()
-                                Text("\(model.store.today.count)").font(.headline.monospacedDigit()).frame(width: 38, height: 38).background(Color.plateAccent.opacity(0.12), in: .circle)
+                                Text("\(dayMeals.count)").font(.headline.monospacedDigit()).frame(width: 38, height: 38).background(Color.plateAccent.opacity(0.12), in: .circle)
                             }.padding(.top, 6)
-                            if model.store.today.isEmpty { emptyJournal }
+                            if dayMeals.isEmpty { emptyJournal }
                             PlateSegmentedControl(options: ["All"] + MealType.allCases.map { $0.rawValue.capitalized }, selection: $mealFilter)
-                            if visibleMeals.isEmpty && !model.store.today.isEmpty { Text("No meals in this moment yet.").font(.subheadline).foregroundStyle(.secondary).padding(20).frame(maxWidth: .infinity).plateCard() }
+                            if visibleMeals.isEmpty && !dayMeals.isEmpty { Text("No meals in this moment yet.").font(.subheadline).foregroundStyle(.secondary).padding(20).frame(maxWidth: .infinity).plateCard() }
                             ForEach(visibleMeals) { meal in mealCard(meal).transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 30)), removal: .opacity.combined(with: .scale(scale: 0.95)))) }
-                            if !wide && !model.store.today.isEmpty { DailySummaryCard(meals: model.store.today, target: model.store.effectiveTargets) }
+                            if !wide && !dayMeals.isEmpty { DailySummaryCard(meals: dayMeals, target: dayTargets) }
                             if let error = model.store.error ?? model.sync.error { Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange) }
                         }.frame(maxWidth: .infinity)
                     }
@@ -192,53 +259,117 @@ struct TodayView: View {
             }
         }
     }
+    /// Every recent day as a chip; days with meals carry a dot. Tap one and the whole dashboard follows.
+    private var dayStrip: some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: model.store.clock)
+        let logged = Set(model.store.loggedDays)
+        let fortnight = calendar.date(byAdding: .day, value: -13, to: today) ?? today
+        let oldest = min(model.store.loggedDays.last ?? fortnight, fortnight)
+        let span = min(120, (calendar.dateComponents([.day], from: oldest, to: today).day ?? 13) + 1)
+        let days: [Date] = (0..<span).compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }.reversed()
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionEyebrow(text: isToday ? "Your days" : "Looking back")
+                Spacer()
+                if !isToday {
+                    Button { select(.now) } label: { Label("Back to today", systemImage: "arrow.uturn.forward").font(.caption.weight(.semibold)) }
+                        .buttonStyle(.glass).tint(Color.plateAccent).transition(.scale.combined(with: .opacity))
+                }
+            }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(days, id: \.self) { day in
+                            let selected = calendar.isDate(day, inSameDayAs: selectedDay)
+                            let hasMeals = logged.contains(day)
+                            Button { select(day) } label: {
+                                VStack(spacing: 5) {
+                                    Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold))
+                                    Text(day, format: .dateTime.day()).font(.system(.headline, design: .rounded, weight: .bold))
+                                    Circle().fill(selected ? AnyShapeStyle(.white) : AnyShapeStyle(Color.plateAccent)).frame(width: 5, height: 5).opacity(hasMeals ? 1 : 0)
+                                }
+                                .foregroundStyle(selected ? AnyShapeStyle(.white) : hasMeals ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                                .frame(width: 48, height: 68)
+                                .background { if selected { Capsule().fill(.clear).glassEffect(Glass.regular.tint(Color.plateAccent).interactive(), in: .capsule).matchedGeometryEffect(id: "selected-day", in: dayStripNamespace) } }
+                                .contentShape(Capsule())
+                            }.buttonStyle(PlatePress()).id(day)
+                                .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted))\(hasMeals ? ", \(Int(model.store.total(on: day).calories)) calories" : ", nothing logged")")
+                                .accessibilityAddTraits(selected ? .isSelected : [])
+                        }
+                    }.padding(6)
+                }
+                .defaultScrollAnchor(.trailing)
+                .glassEffect(.regular, in: .rect(cornerRadius: 30))
+                .onChange(of: selectedDay) { _, day in withAnimation(reduceMotion ? nil : .smooth) { proxy.scrollTo(day, anchor: .center) } }
+            }
+        }
+    }
     private func masthead(wide: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 10) {
-                PlateMark(size: 34)
-                Text("plate").font(.system(size: 22, weight: .black, design: .rounded)).tracking(-0.5)
+                PlateMark(size: 28)
+                Text("plate").font(.system(size: 20, weight: .bold)).tracking(-0.5)
                 Spacer(minLength: 12)
                 if !wide { FruitTrio(size: 48) }
             }
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 14) {
                     headline
-                    dateSticker
+                    dateChip
                 }
                 if wide { Spacer(minLength: 16); FruitTrio(size: 112).padding(.trailing, 8) }
             }
-            Text("snap it, tell it, log it. Plato does the maths.")
-                .font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(Color.ink.opacity(0.65))
-            StickerShelf()
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 4)
     }
-    private var dateSticker: some View {
-                Text(model.store.clock, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated))
-                    .font(.system(size: 12, weight: .black, design: .rounded)).foregroundStyle(Color.inkFixed)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color.matcha, in: .capsule).overlay(Capsule().strokeBorder(Color.ink, lineWidth: 2))
-                    .rotationEffect(.degrees(3))
+    private var dateChip: some View {
+        Text(selectedDay, format: .dateTime.weekday(.wide).day().month(.wide))
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .glassEffect(.regular, in: .capsule)
     }
     private var headline: some View {
-            (Text("eat ") + Text("good").foregroundStyle(Color.chili) + Text(",\nfeel ") + Text("good").foregroundStyle(Color.ube) + Text(" ✨"))
-                .font(.system(size: 52, weight: .black, design: .rounded)).tracking(-1.5)
-                .lineSpacing(-4).fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Eat good, feel good")
+        Text("eat good,\nfeel good.")
+            .font(.system(size: 56, weight: .heavy)).tracking(-2.2)
+            .lineSpacing(-6).fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(LinearGradient(colors: [Color.ink, Color.ube, Color.chili], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .accessibilityLabel("Eat good, feel good")
     }
     private var emptyJournal: some View {
         VStack(alignment: .leading, spacing: 18) {
             ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.butter.opacity(0.35)).overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.ink, lineWidth: 2)).frame(height: 130)
-                HStack(spacing: 6) {
-                    ForEach(["🥕", "🥗", "🐟"], id: \.self) { emoji in WobbleSticker(emoji: emoji, size: 34, draggable: true) }
+                RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.primary.opacity(0.04)).frame(height: 130)
+                HStack(spacing: 14) {
+                    ForEach(Array([("carrot.fill", Color.butter), ("leaf.fill", Color.matcha), ("fish.fill", Color.chili)].enumerated()), id: \.offset) { index, entry in
+                        PlateIconTile(symbol: entry.0, tint: entry.1, size: 56)
+                            .symbolEffect(.breathe, options: .speed(0.5))
+                            .offset(y: index == 1 ? -8 : 4)
+                    }
                 }
             }
             Text("Your next good thing.").font(.system(.title2, design: .rounded, weight: .bold))
             Text("A quick photo, a familiar favourite, or something new. Every meal is a fresh start.").font(.subheadline).foregroundStyle(.secondary)
-            Button { model.showCapture = true } label: { Label("Add your first plate", systemImage: "plus").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(15).background(Color.plateAccent.opacity(0.15), in: .capsule) }.buttonStyle(PlatePress())
+            Button { model.showCapture = true } label: { Label("Add your first plate", systemImage: "plus").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(8) }.buttonStyle(.glassProminent).tint(Color.plateAccent)
         }.padding(24).plateCard()
     }
     private var quickCapture: some View {
+        VStack(spacing: 12) {
+            Button { typingMeal = true } label: {
+                HStack(spacing: 15) {
+                    Image(systemName: "text.bubble.fill").font(.system(size: 24, weight: .semibold)).foregroundStyle(Color.plateAccent)
+                        .frame(width: 56, height: 56).background(Color.plateAccent.opacity(0.16), in: .rect(cornerRadius: 18))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Type what you ate").font(.headline)
+                        Text("\"Mie Gacoan level 3\", \"Kopi Kenangan Mantan\" · no photo needed").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "sparkles").font(.headline).foregroundStyle(Color.plateAccent).symbolEffect(.breathe, isActive: !reduceMotion)
+                }.padding(20).plateCard()
+            }.buttonStyle(PlatePress()).foregroundStyle(.primary)
+            photoCapture
+        }
+    }
+    private var photoCapture: some View {
         Button { model.showCapture = true } label: {
             HStack(spacing: 15) {
                 Image(systemName: "viewfinder").font(.system(size: 27, weight: .light)).frame(width: 56, height: 56).background(Color.plateAccent.opacity(0.16), in: .rect(cornerRadius: 18))
@@ -253,14 +384,14 @@ struct TodayView: View {
             HStack { Text("The daily read.").font(.system(.title2, design: .rounded, weight: .bold)); Spacer(); Image(systemName: "sun.max.fill").foregroundStyle(Color.plateCarb).symbolEffect(.bounce, value: reduceMotion ? 0 : storyMode) }
             PlateSegmentedControl(options: ["Energy", "Protein", "Balance"], selection: $storyMode)
             VStack(alignment: .leading, spacing: 14) {
-                Text(storyMode == 0 ? model.store.guidance.title : storyMode == 1 ? "Build a stronger plate." : "Every macro has a role.").font(.system(size: 27, weight: .bold, design: .rounded)).tracking(-0.7)
-                Text(storyMode == 0 ? "\(Int(abs(model.store.guidance.remaining))) kcal \(model.store.guidance.remaining < 0 ? "over" : "left")" : storyMode == 1 ? "\(Int(model.store.todayTotal.protein)) / \(Int(model.store.effectiveTargets.nutrients.protein)) g" : "\(Int(model.store.todayTotal.protein)) P · \(Int(model.store.todayTotal.carbs)) C · \(Int(model.store.todayTotal.fat)) F").font(.system(size: 32, weight: .bold, design: .rounded)).contentTransition(.numericText())
-                Text(storyMode == 0 ? model.store.guidance.message : storyMode == 1 ? "\(Int(max(0,model.store.effectiveTargets.nutrients.protein-model.store.todayTotal.protein))) g of protein left toward today’s target. Tap a meal below to explore what’s on your plate." : "Protein and carbs provide about 4 kcal per gram; fat provides about 9. Your logged food determines this split.").font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(storyMode == 0 ? dayGuidance.title : storyMode == 1 ? "Build a stronger plate." : "Every macro has a role.").font(.system(size: 27, weight: .bold, design: .rounded)).tracking(-0.7)
+                Text(storyMode == 0 ? "\(Int(abs(dayGuidance.remaining))) kcal \(dayGuidance.remaining < 0 ? "over" : "left")" : storyMode == 1 ? "\(Int(dayTotal.protein)) / \(Int(dayTargets.nutrients.protein)) g" : "\(Int(dayTotal.protein)) P · \(Int(dayTotal.carbs)) C · \(Int(dayTotal.fat)) F").font(.system(size: 32, weight: .bold, design: .rounded)).contentTransition(.numericText())
+                Text(storyMode == 0 ? dayGuidance.message : storyMode == 1 ? "\(Int(max(0,dayTargets.nutrients.protein-dayTotal.protein))) g of protein left toward today’s target. Tap a meal below to explore what’s on your plate." : "Protein and carbs provide about 4 kcal per gram; fat provides about 9. Your logged food determines this split.").font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }.id(storyMode).transition(.opacity.combined(with: .offset(y: 6)))
-            if model.store.account.settings.trainingDayTargets != nil {
+            if isToday && model.store.account.settings.trainingDayTargets != nil {
                 Toggle(isOn: Binding(get: { model.store.trainingToday }, set: { model.store.trainingToday = $0; model.sync.saveAccount(); model.store.publishWidget() })) { Label("Training day", systemImage: "dumbbell.fill").font(.subheadline.bold()) }.tint(Color.plateAccent)
             }
-            HStack { Label("\(model.store.today.count) \(model.store.today.count == 1 ? "meal" : "meals")", systemImage: "fork.knife"); Spacer(); Label(model.sync.status, systemImage: model.sync.userID == nil ? "internaldrive" : "icloud") }.font(.caption).foregroundStyle(.secondary)
+            HStack { Label("\(dayMeals.count) \(dayMeals.count == 1 ? "meal" : "meals")", systemImage: "fork.knife"); Spacer(); Label(model.sync.status, systemImage: model.sync.userID == nil ? "internaldrive" : "icloud") }.font(.caption).foregroundStyle(.secondary)
         }.padding(24).plateCard().sensoryFeedback(.selection, trigger: storyMode)
     }
     @ViewBuilder private func mealCard(_ meal: Meal) -> some View {
@@ -271,7 +402,7 @@ struct TodayView: View {
         #endif
     }
     private var overages: [NutritionOverage] {
-        NutritionOverage.evaluate(eaten: model.store.todayTotal, target: model.store.effectiveTargets.nutrients)
+        NutritionOverage.evaluate(eaten: dayTotal, target: dayTargets.nutrients)
     }
     private var overTargetNotice: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -303,36 +434,153 @@ struct TodayView: View {
     private func warningName(_ id: String) -> String {
         switch id { case "calories": "KALORI"; case "protein": "PROTEIN · P"; case "carbs": "KARBOHIDRAT · C"; default: "LEMAK · F" }
     }
-    private var dashboardHeader: some View {
-        VStack(spacing: 18) {
-            if !overages.isEmpty { overTargetNotice }
-            HStack {
-                SectionEyebrow(text: "01 / DAILY ENERGY")
-                Spacer()
-                Text(overages.isEmpty ? model.store.guidance.title : "TARGET TERLEWATI").font(.caption.weight(.semibold)).foregroundStyle(model.store.guidance.state.color).padding(.horizontal, 10).padding(.vertical, 7).background(model.store.guidance.state.color.opacity(0.10), in: .capsule)
-            }
-            PlateDial(meals: model.store.today, target: model.store.effectiveTargets.nutrients.calories, tint: model.store.guidance.state.color)
-                .overlay { SparkBurst(trigger: burst, tint: model.store.guidance.state.color) }
-            Text("Tap the plate to explore your energy").font(.caption2).foregroundStyle(.secondary)
-            HStack(alignment: .top, spacing: 9) {
-                NutrientTile(name: "Protein", symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: overages.contains { $0.id == "protein" } ? .red : .plateAccent)
-                NutrientTile(name: "Carbs", symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: overages.contains { $0.id == "carbs" } ? .red : .plateCarb)
-                NutrientTile(name: "Fat", symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: overages.contains { $0.id == "fat" } ? .red : .plateFat)
-            }
-        }.padding(22)
-            // Flat, like every other surface; a quiet red wash only when a target is passed.
-            .plateCard()
-            .overlay {
-                if !overages.isEmpty {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.glazeRed.opacity(0.07))
-                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.glazeRed.opacity(0.45), lineWidth: 1))
-                        .allowsHitTesting(false)
+    /// The day's status, front and centre: room (violet), almost full (amber, pulsing), on target (green) or over (red, rippling).
+    private var energyStatus: some View {
+        let state = dayGuidance.state
+        let target = dayTargets.nutrients.calories
+        let eaten = dayTotal.calories
+        let left = Int(max(0, target - eaten).rounded())
+        let over = Int(max(0, eaten - target).rounded())
+        let macroOvers = overages.filter { $0.id != "calories" }
+        let info: (icon: String, title: String, detail: String) = switch state {
+        case .calm: ("sparkles", macroOvers.isEmpty ? "Room to nourish" : "A macro went over", "\(left) kcal left \(dayWord)")
+        case .almost: ("exclamationmark.triangle.fill", "Heads up, almost full", "Only \(left) kcal left \(dayWord)")
+        case .hit: ("checkmark.seal.fill", "Bang on target", "You've fuelled the day. Nice.")
+        case .over: ("exclamationmark.octagon.fill", "You've gone over", "+\(over) kcal past your \(Int(target)) kcal target")
+        }
+        let tint = macroOvers.isEmpty || state == .over ? state.color : Color.overRed
+        let warning = state == .almost || state == .over || !macroOvers.isEmpty
+        return HStack(alignment: .center, spacing: 12) {
+            Image(systemName: info.icon).font(.system(size: 19, weight: .bold)).foregroundStyle(tint)
+                .frame(width: 42, height: 42).background(tint.opacity(0.16), in: .circle)
+                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion && warning)
+                .symbolEffect(.bounce, value: state)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(info.title).font(.headline)
+                Text(info.detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(2).contentTransition(.numericText())
+                if !macroOvers.isEmpty {
+                    Text(macroOvers.map { "\($0.name) +\(Int($0.excess.rounded(.up))) \($0.unit)" }.joined(separator: " · "))
+                        .font(.caption.weight(.bold)).foregroundStyle(Color.overRed)
                 }
             }
-            .animation(reduceMotion ? nil : .spring(response: 0.7), value: model.store.todayTotal)
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(warning ? 0.16 : 0.08), in: .rect(cornerRadius: 22, style: .continuous))
+        .overlay { if state == .over || !macroOvers.isEmpty { WarningRipple(color: .overRed, cornerRadius: 22) } }
+        .id(state)
+        .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
+        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: state)
+        .accessibilityElement(children: .combine)
+    }
+    private var dashboardHeader: some View {
+        VStack(spacing: 18) {
+            energyStatus
+            PlateDial(meals: dayMeals, target: dayTargets.nutrients.calories, tint: dayGuidance.state.color)
+                .overlay { SparkBurst(trigger: burst, tint: dayGuidance.state.color) }
+            Text("Tap the ring to switch eaten and left").font(.caption2).foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 10) {
+                NutrientTile(name: "Protein", symbol: "bolt.fill", value: dayTotal.protein, target: dayTargets.nutrients.protein, tint: .chili)
+                NutrientTile(name: "Carbs", symbol: "leaf.fill", value: dayTotal.carbs, target: dayTargets.nutrients.carbs, tint: .plateCarb)
+                NutrientTile(name: "Fat", symbol: "drop.fill", value: dayTotal.fat, target: dayTargets.nutrients.fat, tint: .plateFat)
+            }
+        }.padding(20)
+            .plateCard()
+            .animation(reduceMotion ? nil : .spring(response: 0.7), value: dayTotal)
     }
 }
 
+/// The floating Liquid Glass header for Today: a day button in the middle with arrows either side, and settings on the right.
+/// Everything sits in one glass container, so buttons melt out of and back into each other as they appear and disappear.
+/// Swipe the day button sideways to move through days; tap it for every logged day.
+private struct FloatingDayHeader: View {
+    let title: String
+    let selectedDay: Date
+    let isToday: Bool
+    let loggedDays: [Date]
+    let total: @MainActor (Date) -> Double
+    let select: @MainActor (Date) -> Void
+    let step: @MainActor (Int) -> Void
+    let openSettings: (@MainActor () -> Void)?
+    @Namespace private var glass
+    @State private var drag: CGFloat = 0
+    @State private var turning = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 10) {
+                if !isToday {
+                    roundButton("arrow.uturn.backward", label: "Back to today", tint: .plateAccent) { select(.now) }
+                        .glassEffectID("today", in: glass)
+                }
+                roundButton("chevron.left", label: "Previous day") { step(-1) }
+                    .glassEffectID("back", in: glass)
+                dayMenu.glassEffectID("day", in: glass)
+                if !isToday {
+                    roundButton("chevron.right", label: "Next day") { step(1) }
+                        .glassEffectID("forward", in: glass)
+                }
+                if let openSettings {
+                    roundButton("slider.horizontal.3", label: "Settings", action: openSettings)
+                        .glassEffectID("settings", in: glass)
+                }
+            }
+        }
+        .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.78), value: isToday)
+        .frame(maxWidth: .infinity)
+        .onAppear { guard !reduced else { return }; withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { turning = true } }
+    }
+    private var dayMenu: some View {
+        Menu {
+            Button("Today", systemImage: "sun.max") { select(.now) }
+            Section("Logged days") {
+                ForEach(loggedDays.prefix(60), id: \.self) { day in
+                    Button { select(day) } label: {
+                        Label("\(TodayView.title(for: day)) · \(Int(total(day))) kcal", systemImage: Calendar.current.isDate(day, inSameDayAs: selectedDay) ? "checkmark" : "calendar")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 9) {
+                // A tiny aurora orb that keeps turning.
+                Circle().fill(AngularGradient(colors: [.ube, .bubble, .butter, .matcha, .sky, .ube], center: .center))
+                    .frame(width: 12, height: 12)
+                    .rotationEffect(.degrees(turning ? 360 : 0))
+                Text(title).font(.headline).lineLimit(1)
+                    .id(title)
+                    .transition(.blurReplace)
+                Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                    .symbolEffect(.bounce, value: title)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .offset(x: drag)
+        .scaleEffect(1 - min(abs(drag), 60) / 900)
+        .simultaneousGesture(DragGesture(minimumDistance: 14)
+            .onChanged { value in drag = value.translation.width * 0.35 }
+            .onEnded { value in
+                let move = value.translation.width
+                if move > 50 { step(-1) } else if move < -50 { step(1) }
+                withAnimation(reduced ? nil : .spring(response: 0.45, dampingFraction: 0.6)) { drag = 0 }
+            })
+        .accessibilityLabel("\(title). Choose a day")
+    }
+    private func roundButton(_ symbol: String, label: String, tint: Color? = nil, action: @escaping @MainActor () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tint == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
+                .frame(width: 44, height: 44).contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(tint.map { Glass.regular.tint($0).interactive() } ?? Glass.regular.interactive(), in: .circle)
+        .accessibilityLabel(label)
+        .transition(.scale(scale: 0.4).combined(with: .opacity))
+    }
+}
 /// Today's burn and workouts from Apple Health, next to what you've eaten.
 struct MovementCard: View {
     @Environment(PlateModel.self) private var model
@@ -407,27 +655,52 @@ struct MealDetailView: View {
     @State private var addingWithAI = false
     @State private var photoData: Data?
     @State private var hasChanges = false
+    /// Move the meal to another day or time, or change which meal it was. Saved with Done.
+    private var whenCard: some View {
+        let calendar = Calendar.current
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionEyebrow(text: "When")
+            DatePicker("Day and time", selection: $meal.timestamp, in: ...Date.now, displayedComponents: [.date, .hourAndMinute])
+            HStack(spacing: 8) {
+                ForEach([("Today", 0), ("Yesterday", -1), ("2 days ago", -2)], id: \.1) { title, offset in
+                    let day = calendar.date(byAdding: .day, value: offset, to: .now) ?? .now
+                    let current = calendar.isDate(meal.timestamp, inSameDayAs: day)
+                    Button(title) {
+                        let time = calendar.dateComponents([.hour, .minute], from: meal.timestamp)
+                        let moved = calendar.date(bySettingHour: time.hour ?? 12, minute: time.minute ?? 0, second: 0, of: day) ?? day
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { meal.timestamp = min(moved, .now) }
+                    }
+                    .font(.caption.weight(.semibold)).buttonStyle(.plain)
+                    .foregroundStyle(current ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .glassEffect(current ? Glass.regular.tint(Color.plateAccent).interactive() : Glass.regular.interactive(), in: .capsule)
+                }
+            }
+            Picker("Meal", selection: $meal.type) { ForEach(MealType.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }
+        }.padding(18).plateCard()
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if meal.photoPath != nil { FoodPhoto(path: meal.photoPath).frame(height: 270).clipShape(RoundedRectangle(cornerRadius: 24)) }
                     Text("\(Int(meal.total.calories)) kcal · \(Int(meal.total.protein)) g protein").font(.title2.bold())
+                    whenCard
                     ForEach(meal.items) { item in
                         VStack(alignment: .leading, spacing: 12) {
                             Button { editing = item.id } label: {
                                 HStack { VStack(alignment: .leading, spacing: 5) { Text(item.name).font(.headline); Text("\(item.quantity.formatted()) × \(item.servingDescription)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(Int(item.total.calories)) kcal").monospacedDigit() }
                             }.buttonStyle(.plain)
                             Button { aiItem = item } label: { Label("Edit with AI (photo + words)", systemImage: "sparkles").fontWeight(.semibold) }
-                                .buttonStyle(.bordered).tint(Color.plateAccent).font(.caption)
+                                .buttonStyle(.glass).tint(Color.plateAccent).font(.caption)
                         }.padding(18).plateCard()
                     }
                     Button { addingWithAI = true } label: {
                         Label("Add food with AI (photo + words)", systemImage: "plus.bubble.fill").fontWeight(.semibold).frame(maxWidth: .infinity).padding(6)
-                    }.buttonStyle(.borderedProminent).tint(Color.plateAccent)
+                    }.buttonStyle(.glassProminent).tint(Color.plateAccent)
                     if !meal.isValid { Label("Check portions and nutrition values before saving.", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange) }
                     if hasChanges { Text("Tap Done to save your changes and update Apple Health when connected.").font(.caption).foregroundStyle(.secondary) }
-                    Button("Repeat this meal", systemImage: "arrow.clockwise") { model.repeatMeal(meal); dismiss() }.buttonStyle(.borderedProminent).tint(Color.plateAccent)
+                    Button("Repeat this meal", systemImage: "arrow.clockwise") { model.repeatMeal(meal); dismiss() }.buttonStyle(.glassProminent).tint(Color.plateAccent)
                     Button("Save foods to My Foods", systemImage: "bookmark") { for item in meal.items { model.store.saveFood(item) }; model.sync.saveAccount(); model.notice = "Saved to My Foods." }
                     Button("Delete meal", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 }.padding(24)
@@ -449,6 +722,12 @@ struct MealDetailView: View {
                 if let path = meal.photoPath { photoData = await PhotoStore.shared.load(path: path, sync: model.sync) }
             }
             .onChange(of: meal.items) { _, _ in hasChanges = true }
+            .onChange(of: meal.timestamp) { _, stamp in
+                // Keep the stored day in step so the meal moves to its new day everywhere.
+                meal.dayKey = DayKey.make(stamp); meal.timeZoneID = TimeZone.current.identifier
+                hasChanges = true
+            }
+            .onChange(of: meal.type) { _, _ in hasChanges = true }
             .interactiveDismissDisabled(hasChanges)
             .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) { if let index = meal.items.firstIndex(where: { $0.id == editing }) { FoodItemEditor(item: $meal.items[index]) } }
             .confirmationDialog("Delete this meal?", isPresented: $confirmDelete) { Button("Delete meal", role: .destructive) { model.deleteMeal(meal); dismiss() } }
@@ -476,48 +755,5 @@ struct DailySummaryCard: View {
 #Preview { FoundationView(model: PlateModel()) }
 
 #if os(iOS)
-private struct PhoneNavigationDock: View {
-    @Binding var selection: Destination
-    let capture: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var selectedTab
-    @ScaledMetric(relativeTo: .caption) private var height: CGFloat = 64
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            HStack(spacing: 0) {
-                ForEach(Destination.allCases) { item in
-                    Button {
-                        withAnimation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.55)) { selection = item }
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: item.icon).font(.system(size: 19, weight: .black)).frame(height: 23)
-                                .symbolEffect(.bounce, value: selection == item)
-                            Text(item == .foods ? "Foods" : item.rawValue)
-                                .font(.system(size: 10, weight: .heavy, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
-                        }
-                        .foregroundStyle(selection == item ? Color.inkFixed : Color.ink.opacity(0.65))
-                        .frame(maxWidth: .infinity).frame(height: height - 14)
-                        .background {
-                            if selection == item {
-                                Capsule().fill(item.tint).overlay(Capsule().strokeBorder(Color.ink, lineWidth: 2))
-                                    .matchedGeometryEffect(id: "selected-tab", in: selectedTab)
-                            }
-                        }.contentShape(Capsule())
-                    }.buttonStyle(PlatePress()).accessibilityLabel(item.rawValue)
-                        .accessibilityAddTraits(selection == item ? .isSelected : [])
-                }
-            }.padding(6)
-                .background(Capsule().fill(Color.surface))
-                .overlay(Capsule().strokeBorder(Color.ink, lineWidth: 2.5))
-            Button(action: capture) {
-                Image(systemName: "camera.fill").font(.system(size: 22, weight: .black))
-                    .foregroundStyle(Color.inkFixed).frame(width: height, height: height)
-                    .background(Circle().fill(Color.chili)).overlay(Circle().strokeBorder(Color.ink, lineWidth: 2.5))
-                    .contentShape(Circle())
-            }.buttonStyle(PlatePress())
-                .accessibilityLabel("Log a meal")
-                .accessibilityHint("Take a photo, import an image, or enter food manually")
-        }.frame(maxWidth: 600).sensoryFeedback(.selection, trigger: selection)
-    }
-}
+private enum TabChoice: Hashable { case page(Destination), capture }
 #endif

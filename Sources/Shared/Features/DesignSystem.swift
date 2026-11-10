@@ -16,7 +16,7 @@ enum PlateAppearance: String, CaseIterable, Identifiable {
 }
 
 
-// MARK: - Palette: cream, ink and bright food colours
+// MARK: - Palette: aurora pastels and clear, confident accents
 
 extension Color {
     /// A colour that follows light and dark appearance.
@@ -33,26 +33,25 @@ extension Color {
         })
         #endif
     }
-    /// The page: warm cream by day, deep ube-black by night.
-    static let cream = adaptive((1.0, 0.957, 0.894), (0.086, 0.071, 0.122))
-    /// Sticker paper: white by day, plum by night.
-    static let surface = adaptive((1.0, 1.0, 1.0), (0.141, 0.114, 0.192))
-    /// Outlines and text: ink by day, cream by night.
-    static let ink = adaptive((0.118, 0.102, 0.180), (1.0, 0.957, 0.894))
-    /// Text that sits on bright fills, in both appearances.
-    static let inkFixed = Color(red: 0.118, green: 0.102, blue: 0.180)
-    static let chili = Color(red: 1.0, green: 0.39, blue: 0.18)
-    static let butter = Color(red: 1.0, green: 0.765, blue: 0.2)
-    static let matcha = Color(red: 0.42, green: 0.776, blue: 0.333)
-    static let ube = Color(red: 0.557, green: 0.427, blue: 0.949)
-    static let bubble = Color(red: 1.0, green: 0.478, blue: 0.698)
-    static let sky = Color(red: 0.345, green: 0.776, blue: 1.0)
-    static let overRed = Color(red: 1.0, green: 0.25, blue: 0.4)
-    /// Roles. Protein is chili (also the accent), carbs butter, fat matcha.
-    static let plateAccent = chili
+    static let cream = adaptive((0.985, 0.975, 0.97), (0.06, 0.055, 0.09))
+    static let surface = adaptive((1.0, 1.0, 1.0), (0.13, 0.12, 0.17))
+    static let ink = adaptive((0.09, 0.08, 0.13), (0.97, 0.96, 0.98))
+    static let inkFixed = Color(red: 0.09, green: 0.08, blue: 0.13)
+    /// Protein.
+    static let chili = Color(red: 1.0, green: 0.42, blue: 0.38)
+    /// Carbs.
+    static let butter = Color(red: 1.0, green: 0.70, blue: 0.26)
+    /// Fat.
+    static let matcha = Color(red: 0.18, green: 0.78, blue: 0.62)
+    /// The accent: electric violet.
+    static let ube = Color(red: 0.45, green: 0.33, blue: 1.0)
+    static let bubble = Color(red: 1.0, green: 0.55, blue: 0.75)
+    static let sky = Color(red: 0.35, green: 0.68, blue: 1.0)
+    static let overRed = Color(red: 1.0, green: 0.27, blue: 0.35)
+    static let plateAccent = ube
     static let plateCarb = butter
     static let plateFat = matcha
-    // Older names, kept so every screen picks up the new palette.
+    // Older names, kept so every screen picks up the palette.
     static let saffron = chili
     static let terracotta = butter
     static let celadon = matcha
@@ -68,219 +67,117 @@ extension DayStatus {
 
 // MARK: - Surfaces
 
-/// A sticker card: white paper, a bold ink outline. Flat, no shadows.
+/// One motion vocabulary for the whole app, so everything moves with the same physics.
+enum Motion {
+    /// Taps, toggles, selections.
+    static let snappy = Animation.spring(response: 0.34, dampingFraction: 0.8)
+    /// Things moving to a new place.
+    static let fluid = Animation.spring(response: 0.55, dampingFraction: 0.82)
+    /// Arrivals with a little life in them.
+    static let lively = Animation.spring(response: 0.6, dampingFraction: 0.68)
+    /// Slow, ambient drift.
+    static let drift = Animation.easeInOut(duration: 2.4)
+}
+/// A Liquid Glass panel floating over the aurora. Solid when Reduce Transparency is on.
+/// Every card arrives by rising out of a soft blur, and breathes with the scroll: it eases back and softens
+/// as it nears the edge of the screen, and comes forward, sharp, in the middle.
 struct GlassCard: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var arrived = false
     func body(content: Content) -> some View {
-        content.background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.surface)
-                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.ink, lineWidth: 2))
+        surface(content)
+            .opacity(arrived || reduced ? 1 : 0)
+            .blur(radius: arrived || reduced ? 0 : 10)
+            .scaleEffect(arrived || reduced ? 1 : 0.96, anchor: .bottom)
+            .offset(y: arrived || reduced ? 0 : 14)
+            .scrollTransition(.interactive, axis: .vertical) { view, phase in
+                view.scaleEffect(reduced || phase.isIdentity ? 1 : 0.95)
+                    .opacity(reduced || phase.isIdentity ? 1 : 0.6)
+                    .blur(radius: reduced || phase.isIdentity ? 0 : 2)
+                    .offset(y: reduced ? 0 : phase.value * 12)
+            }
+            .onAppear { withAnimation(reduced ? nil : Motion.lively.delay(0.05)) { arrived = true } }
+    }
+    @ViewBuilder private func surface(_ content: Content) -> some View {
+        if reduceTransparency {
+            content.background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.surface))
+        } else {
+            content.glassEffect(.regular, in: .rect(cornerRadius: 28))
         }
+    }
+}
+/// Shown while the AI works: an aurora ring that turns, sparkles that pulse, and a line of text that shimmers.
+struct AILoader: View {
+    var title = "Thinking about your food…"
+    var detail: String? = nil
+    @State private var spinning = false
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(AngularGradient(colors: [.ube, .bubble, .chili, .butter, .matcha, .ube], center: .center), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(spinning ? 360 : 0))
+                Image(systemName: "sparkles").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.plateAccent)
+                    .symbolEffect(.pulse, options: .repeating, isActive: !reduced)
+            }.frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                    .phaseAnimator([0.45, 1.0]) { view, glow in view.opacity(reduced ? 1 : glow) } animation: { _ in .easeInOut(duration: 0.9) }
+                if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .glassEffect(.regular.tint(Color.plateAccent.opacity(0.12)), in: .rect(cornerRadius: 22))
+        .transition(.blurReplace)
+        .onAppear { guard !reduced else { return }; withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { spinning = true } }
+        .accessibilityElement(children: .combine)
     }
 }
 extension View { func plateCard() -> some View { modifier(GlassCard()) } }
 
-/// The page: cream paper with food stickers and doodles drifting and swaying.
+/// The aurora: a soft mesh of peach, lilac and mint that drifts slowly, tinted by how the day is going.
 struct PlateBackground: View {
     let status: DayStatus
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.plateMotionActive) private var motionActive
-    private struct Doodle { let symbol: String; let emoji: Bool; let x: Double; let y: Double; let size: CGFloat; let color: Int; let speed: Double; let phase: Double }
-    private static let doodles: [Doodle] = [
-        Doodle(symbol: "🍓", emoji: true, x: 0.10, y: 0.12, size: 30, color: 0, speed: 0.6, phase: 0.0),
-        Doodle(symbol: "sparkle", emoji: false, x: 0.86, y: 0.07, size: 22, color: 3, speed: 0.9, phase: 1.2),
-        Doodle(symbol: "🥑", emoji: true, x: 0.90, y: 0.33, size: 32, color: 0, speed: 0.5, phase: 2.1),
-        Doodle(symbol: "star.fill", emoji: false, x: 0.06, y: 0.40, size: 16, color: 1, speed: 1.1, phase: 0.7),
-        Doodle(symbol: "🍜", emoji: true, x: 0.14, y: 0.68, size: 30, color: 0, speed: 0.45, phase: 3.3),
-        Doodle(symbol: "heart.fill", emoji: false, x: 0.92, y: 0.60, size: 18, color: 4, speed: 0.8, phase: 2.8),
-        Doodle(symbol: "🍙", emoji: true, x: 0.80, y: 0.88, size: 30, color: 0, speed: 0.55, phase: 1.7),
-        Doodle(symbol: "scribble.variable", emoji: false, x: 0.32, y: 0.94, size: 26, color: 2, speed: 0.7, phase: 0.4),
-        Doodle(symbol: "🌶️", emoji: true, x: 0.52, y: 0.03, size: 24, color: 0, speed: 0.65, phase: 4.0),
-        Doodle(symbol: "circle.dotted", emoji: false, x: 0.60, y: 0.52, size: 40, color: 3, speed: 0.35, phase: 5.1)
-    ]
-    var body: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-            let palette: [Color] = [.chili, .butter, .matcha, status.color, .bubble]
-            ZStack {
-                Color.cream
-                TimelineView(.animation(minimumInterval: 1 / 24, paused: reduced || !motionActive)) { timeline in
-                    let t = reduced ? 0 : timeline.date.timeIntervalSinceReferenceDate
-                    ZStack {
-                        ForEach(Self.doodles.indices, id: \.self) { index in
-                            let d = Self.doodles[index]
-                            doodle(d, color: palette[d.color])
-                                .rotationEffect(.degrees(sin(t * d.speed + d.phase) * 14))
-                                .position(x: size.width * d.x + cos(t * d.speed * 0.6 + d.phase) * 12, y: size.height * d.y + sin(t * d.speed * 0.8 + d.phase) * 16)
-                        }
-                    }
-                }.opacity(0.5)
-            }.frame(width: size.width, height: size.height).clipped()
-        }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+    private var colors: [Color] {
+        let tint = status.color
+        if scheme == .dark {
+            let plum = Color(red: 0.16, green: 0.10, blue: 0.26), navy = Color(red: 0.07, green: 0.11, blue: 0.20)
+            let teal = Color(red: 0.05, green: 0.17, blue: 0.17), rose = Color(red: 0.22, green: 0.09, blue: 0.17), base = Color(red: 0.06, green: 0.055, blue: 0.09)
+            return [plum, base, navy, rose, tint.mix(with: base, by: 0.7), teal, navy, base, plum]
+        }
+        let peach = Color(red: 1.0, green: 0.85, blue: 0.76), lilac = Color(red: 0.86, green: 0.82, blue: 1.0)
+        let mint = Color(red: 0.80, green: 0.96, blue: 0.90), pink = Color(red: 1.0, green: 0.86, blue: 0.92), base = Color(red: 0.99, green: 0.98, blue: 0.97)
+        return [peach, base, lilac, pink, tint.mix(with: base, by: 0.78), mint, lilac, base, peach]
     }
-    @ViewBuilder private func doodle(_ d: Doodle, color: Color) -> some View {
-        if d.emoji { Text(d.symbol).font(.system(size: d.size)) }
-        else { Image(systemName: d.symbol).font(.system(size: d.size, weight: .black)).foregroundStyle(color) }
-    }
-}
-
-// MARK: - Plato, the plate buddy
-
-/// Plato's face. It bobs, blinks, looks where you drag, chomps when you log food and changes mood with your day.
-struct PlateBuddy: View {
-    let mood: DayStatus
-    var size: CGFloat = 110
-    var look: CGSize = .zero
-    var chomp: Int = 0
-    @Environment(\.accessibilityReduceMotion) private var reduced
-    @Environment(\.plateMotionActive) private var motionActive
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduced || !motionActive)) { timeline in
+        TimelineView(.animation(minimumInterval: 1 / 20, paused: reduced || !motionActive)) { timeline in
             let t = reduced ? 0 : timeline.date.timeIntervalSinceReferenceDate
-            let blink = !reduced && t.truncatingRemainder(dividingBy: 3.7) < 0.13
-            face(blink: blink).offset(y: reduced ? 0 : sin(t * 2.2) * size * 0.025)
-        }.frame(width: size, height: size).accessibilityHidden(true)
-    }
-    private func face(blink: Bool) -> some View {
-        let px = max(-1, min(1, look.width / 60)) * size * 0.035
-        let py = max(-1, min(1, look.height / 60)) * size * 0.035
-        return ZStack {
-            HStack(spacing: size * 0.2) { eye(blink: blink); eye(blink: blink) }
-                .offset(x: px, y: -size * 0.09 + py)
-            HStack(spacing: size * 0.42) {
-                Ellipse().fill(Color.bubble.opacity(0.75)).frame(width: size * 0.15, height: size * 0.085)
-                Ellipse().fill(Color.bubble.opacity(0.75)).frame(width: size * 0.15, height: size * 0.085)
-            }.offset(y: size * 0.06)
-            mouth.offset(x: px * 0.5, y: size * 0.17)
-                .keyframeAnimator(initialValue: 1.0, trigger: chomp) { view, scale in
-                    view.scaleEffect(x: 1, y: scale)
-                } keyframes: { _ in
-                    SpringKeyframe(2.0, duration: 0.12)
-                    SpringKeyframe(0.4, duration: 0.12)
-                    SpringKeyframe(1.7, duration: 0.12)
-                    SpringKeyframe(1.0, duration: 0.3)
-                }
+            MeshGradient(width: 3, height: 3, points: [
+                [0, 0], [0.5, 0], [1, 0],
+                [0, Float(0.5 + 0.12 * sin(t * 0.21))], [Float(0.5 + 0.16 * sin(t * 0.17)), Float(0.5 + 0.14 * cos(t * 0.13))], [1, Float(0.5 + 0.12 * cos(t * 0.19))],
+                [0, 1], [Float(0.5 + 0.12 * cos(t * 0.15)), 1], [1, 1]
+            ], colors: colors)
         }
-    }
-    @ViewBuilder private func eye(blink: Bool) -> some View {
-        switch mood {
-        case .hit:
-            Image(systemName: "star.fill").font(.system(size: size * 0.15, weight: .black)).foregroundStyle(Color.butter)
-                .overlay(Image(systemName: "star").font(.system(size: size * 0.15, weight: .black)).foregroundStyle(Color.inkFixed))
-        case .over:
-            Image(systemName: "xmark").font(.system(size: size * 0.11, weight: .black)).foregroundStyle(Color.inkFixed)
-        default:
-            Capsule().fill(Color.inkFixed).frame(width: size * 0.105, height: blink ? size * 0.02 : size * 0.15)
-                .overlay(alignment: .topTrailing) { if !blink { Circle().fill(.white).frame(width: size * 0.035).offset(x: -size * 0.012, y: size * 0.02) } }
-        }
-    }
-    @ViewBuilder private var mouth: some View {
-        let line = StrokeStyle(lineWidth: size * 0.04, lineCap: .round)
-        switch mood {
-        case .calm:
-            Circle().trim(from: 0.05, to: 0.45).stroke(Color.inkFixed, style: line).frame(width: size * 0.26, height: size * 0.26).offset(y: -size * 0.1)
-        case .almost:
-            Circle().stroke(Color.inkFixed, style: line).frame(width: size * 0.1, height: size * 0.1)
-        case .hit:
-            BottomHalf().fill(Color.inkFixed).frame(width: size * 0.3, height: size * 0.15)
-                .overlay(alignment: .bottom) { Ellipse().fill(Color.bubble).frame(width: size * 0.13, height: size * 0.06).offset(y: -size * 0.015) }
-        case .over:
-            Squiggle().stroke(Color.inkFixed, style: line).frame(width: size * 0.28, height: size * 0.07)
-        }
-    }
-}
-private struct BottomHalf: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addArc(center: CGPoint(x: rect.midX, y: rect.minY), radius: rect.width / 2, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
-        path.closeSubpath()
-        return path
-    }
-}
-private struct Squiggle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let steps = 24
-        for step in 0...steps {
-            let x = rect.minX + rect.width * Double(step) / Double(steps)
-            let y = rect.midY + sin(Double(step) / Double(steps) * .pi * 4) * rect.height / 2
-            if step == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
-        }
-        return path
-    }
-}
-
-// MARK: - Stickers
-
-/// An emoji sticker that sways on its own, pops when tapped, and can be dragged and flung back with a bounce.
-struct WobbleSticker: View {
-    let emoji: String
-    var size: CGFloat = 28
-    var draggable = false
-    @State private var sway = false
-    @State private var pops = 0
-    @State private var drag = CGSize.zero
-    @GestureState private var held = false
-    @Environment(\.accessibilityReduceMotion) private var reduced
-    var body: some View {
-        let sticker = Text(emoji).font(.system(size: size))
-            .padding(size * 0.2)
-            .background(Circle().fill(Color.surface))
-            .overlay(Circle().strokeBorder(Color.ink, lineWidth: 2))
-            .rotationEffect(.degrees(reduced ? 0 : sway ? 10 : -10))
-            .keyframeAnimator(initialValue: 1.0, trigger: pops) { view, scale in view.scaleEffect(scale) } keyframes: { _ in
-                SpringKeyframe(1.4, duration: 0.14)
-                SpringKeyframe(1.0, duration: 0.45, spring: .bouncy)
-            }
-            .scaleEffect(held ? 1.25 : 1)
-            .offset(drag)
-            .animation(reduced ? nil : .spring(response: 0.3, dampingFraction: 0.5), value: held)
-            .onTapGesture { pops += 1 }
-            .sensoryFeedback(.impact(weight: .light), trigger: pops)
-            .onAppear {
-                guard !reduced else { return }
-                withAnimation(.easeInOut(duration: Double(emoji.unicodeScalars.first?.value ?? 7).truncatingRemainder(dividingBy: 0.7) + 1.1).repeatForever(autoreverses: true)) { sway = true }
-            }
-            .accessibilityHidden(true)
-        if draggable {
-            sticker.gesture(DragGesture()
-                .updating($held) { _, state, _ in state = true }
-                .onChanged { drag = $0.translation }
-                .onEnded { _ in withAnimation(reduced ? nil : .spring(response: 0.55, dampingFraction: 0.32)) { drag = .zero }; pops += 1 })
-        } else {
-            sticker
-        }
-    }
-}
-/// A row of draggable food stickers.
-struct StickerShelf: View {
-    var emojis = ["🍳", "🥑", "🍗", "🍚", "🧋"]
-    var body: some View {
-        HStack(spacing: -6) {
-            ForEach(Array(emojis.enumerated()), id: \.offset) { index, emoji in
-                WobbleSticker(emoji: emoji, size: 24, draggable: true).zIndex(Double(emojis.count - index))
-            }
-        }
+        .ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+        .animation(.easeInOut(duration: 1.4), value: status)
     }
 }
 
 // MARK: - Small pieces
 
-/// Plate's mark: a little plate face.
+/// Plate's mark: an aurora ring.
 struct PlateMark: View {
     var size: CGFloat = 44
     var body: some View {
         ZStack {
-            Circle().fill(Color.chili)
-            Circle().strokeBorder(Color.ink, lineWidth: max(1.5, size * 0.05))
-            Circle().strokeBorder(Color.inkFixed.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [2, 3])).padding(size * 0.12)
-            HStack(spacing: size * 0.16) {
-                Capsule().fill(Color.inkFixed).frame(width: size * 0.09, height: size * 0.14)
-                Capsule().fill(Color.inkFixed).frame(width: size * 0.09, height: size * 0.14)
-            }.offset(y: -size * 0.06)
-            Circle().trim(from: 0.05, to: 0.45).stroke(Color.inkFixed, style: StrokeStyle(lineWidth: max(1.2, size * 0.045), lineCap: .round))
-                .frame(width: size * 0.3, height: size * 0.3).offset(y: size * 0.02)
+            Circle().stroke(AngularGradient(colors: [.ube, .chili, .butter, .matcha, .ube], center: .center), lineWidth: size * 0.2)
+                .padding(size * 0.1)
+            Circle().fill(Color.ink).frame(width: size * 0.16, height: size * 0.16).offset(y: -size * 0.4 + size * 0.1)
         }.frame(width: size, height: size).accessibilityHidden(true)
     }
 }
@@ -293,33 +190,28 @@ struct MacroRing: View {
     var body: some View {
         VStack(spacing: 10) {
             ZStack {
-                Circle().stroke(Color.ink.opacity(0.08), style: StrokeStyle(lineWidth: compact ? 7 : 10))
-                Circle().trim(from: 0, to: min(1, max(0, value/max(1,target)))).stroke(color, style: StrokeStyle(lineWidth: compact ? 7 : 10, lineCap: .round)).rotationEffect(.degrees(-90))
-                    .animation(reduceMotion ? nil : .spring(response: 0.8, dampingFraction: 0.6), value: value)
-                Circle().strokeBorder(Color.ink, lineWidth: 1.5)
+                Circle().stroke(Color.primary.opacity(0.08), style: StrokeStyle(lineWidth: compact ? 7 : 10))
+                Circle().trim(from: 0, to: min(1, max(0, value / max(1, target)))).stroke(color, style: StrokeStyle(lineWidth: compact ? 7 : 10, lineCap: .round)).rotationEffect(.degrees(-90))
+                    .animation(reduceMotion ? nil : .spring(response: 0.9, dampingFraction: 0.8), value: value)
                 VStack(spacing: 1) {
-                    Text(value, format: .number.precision(.fractionLength(0))).font(.system(compact ? .headline : .title2, design: .rounded, weight: .black)).contentTransition(.numericText())
+                    Text(value, format: .number.precision(.fractionLength(0))).font(.system(compact ? .headline : .title2, design: .rounded, weight: .bold)).contentTransition(.numericText())
                     if !compact { Text("of \(Int(target)) g").font(.caption2).foregroundStyle(.secondary) }
                 }
             }.frame(width: compact ? 58 : 88, height: compact ? 58 : 88)
-            Text(name).font(.caption.weight(.heavy)).foregroundStyle(.secondary)
+            Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
         }.accessibilityElement(children: .ignore).accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams")
     }
 }
 struct CaptureButton: View {
     let action: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "camera.fill").symbolEffect(.breathe, isActive: !reduced)
-                Text("Log a meal").fontWeight(.black)
-            }
-            .font(.system(.subheadline, design: .rounded)).foregroundStyle(Color.inkFixed)
-            .padding(.horizontal, 24).padding(.vertical, 15)
-            .background(Capsule().fill(Color.chili))
-            .overlay(Capsule().strokeBorder(Color.ink, lineWidth: 2.5))
+            HStack(spacing: 10) { Image(systemName: "camera.fill"); Text("Log a meal").fontWeight(.semibold) }
+                .foregroundStyle(.white).padding(.horizontal, 24).padding(.vertical, 16)
+                .background { if reduceTransparency { Capsule().fill(Color.plateAccent) } }
         }.buttonStyle(PlatePress())
+            .glassEffect(reduceTransparency ? .identity : .regular.tint(Color.plateAccent).interactive(), in: .capsule)
             .accessibilityHint("Take a photo, read a label, or enter food manually")
     }
 }
@@ -329,9 +221,9 @@ struct FoodPhoto: View {
     @State private var data: Data?
     var body: some View {
         ZStack {
-            Rectangle().fill(Color.butter.opacity(0.25))
+            Rectangle().fill(Color.primary.opacity(0.05))
             if let data, let image = platformImage(data) { image.resizable().scaledToFill() }
-            else { Text("🍽️").font(.system(size: 30)) }
+            else { Image(systemName: "fork.knife").font(.title2).foregroundStyle(.secondary) }
         }.task(id: path) { data = nil; if let path { data = await PhotoStore.shared.load(path: path, sync: model.sync) } }
     }
 }
@@ -342,19 +234,17 @@ func platformImage(_ data: Data) -> Image? {
     guard let image = NSImage(data: data) else { return nil }; return Image(nsImage: image)
     #endif
 }
-/// A tilted sticker label above each section.
+/// A quiet label above each section: an accent dot and tracked capitals.
 struct SectionEyebrow: View {
     let text: String
     var body: some View {
-        Text(text.uppercased()).font(.system(size: 10.5, weight: .black, design: .rounded)).tracking(1.2)
-            .foregroundStyle(Color.inkFixed).lineLimit(1)
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Color.butter, in: .capsule)
-            .overlay(Capsule().strokeBorder(Color.ink, lineWidth: 1.5))
-            .rotationEffect(.degrees(-2))
+        HStack(spacing: 7) {
+            Circle().fill(Color.plateAccent).frame(width: 6, height: 6)
+            Text(text.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary).lineLimit(1)
+        }
     }
 }
-/// Buttons squish when pressed and spring back with a little bounce.
+/// Buttons settle down a touch when pressed and spring back.
 struct PlatePress: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         PlatePressContent(content: configuration.label, pressed: configuration.isPressed)
@@ -367,15 +257,14 @@ private struct PlatePressContent<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
         content
-            .scaleEffect(x: reduced ? 1 : pressed ? 1.04 : hovering ? 1.02 : 1, y: reduced ? 1 : pressed ? 0.9 : hovering ? 1.02 : 1)
-            .rotationEffect(.degrees(hovering && !pressed && !reduced ? -1.5 : 0))
-            .animation(reduced ? nil : .spring(response: 0.28, dampingFraction: 0.45), value: pressed)
-            .animation(reduced ? nil : .spring(response: 0.4, dampingFraction: 0.55), value: hovering)
+            .scaleEffect(reduced ? 1 : pressed ? 0.96 : hovering ? 1.015 : 1)
+            .animation(reduced ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: pressed)
+            .animation(reduced ? nil : .spring(response: 0.4, dampingFraction: 0.75), value: hovering)
             .sensoryFeedback(.impact(weight: .light), trigger: pressed) { _, isPressed in isPressed }
             .onHover { hovering = $0 }
     }
 }
-/// A round sticker holding a glyph.
+/// A glass disc holding a tinted glyph.
 struct PlateIconTile: View {
     let symbol: String
     let tint: Color
@@ -383,331 +272,326 @@ struct PlateIconTile: View {
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        Image(systemName: symbol).font(.system(size: size * 0.4, weight: .black)).foregroundStyle(Color.inkFixed)
+        Image(systemName: symbol).font(.system(size: size * 0.4, weight: .semibold)).foregroundStyle(tint)
             .frame(width: size, height: size)
-            .background(Circle().fill(tint))
-            .overlay(Circle().strokeBorder(Color.ink, lineWidth: 2))
-            .rotationEffect(.degrees(reduced ? 0 : hovering ? 14 : -6))
-            .scaleEffect(hovering && !reduced ? 1.08 : 1)
-            .animation(reduced ? nil : .spring(response: 0.4, dampingFraction: 0.45), value: hovering)
+            .glassEffect(.regular.tint(tint.opacity(0.18)), in: .circle)
+            .scaleEffect(hovering && !reduced ? 1.06 : 1)
+            .animation(reduced ? nil : .spring(response: 0.4, dampingFraction: 0.7), value: hovering)
             .onHover { hovering = $0 }.accessibilityHidden(true)
     }
 }
-/// The capture-screen illustration: Plato waiting on a plate, with cutlery that sways. Tap to spin.
+/// The capture-screen illustration: a slowly turning aurora orb inside a glass ring. Tap to spin it.
 struct PlateSculpture: View {
+    @State private var turning = false
     @State private var spins = 0.0
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        Button { withAnimation(reduced ? nil : .spring(response: 1, dampingFraction: 0.5)) { spins += 1 } } label: {
-            HStack(spacing: 14) {
-                WobbleSticker(emoji: "🍴", size: 26)
-                ZStack {
-                    Circle().fill(Color.surface)
-                    Circle().strokeBorder(Color.ink, lineWidth: 2.5)
-                    Circle().strokeBorder(Color.ink.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [4, 6])).padding(14)
-                    Circle().fill(Color.chili).padding(28).overlay(Circle().strokeBorder(Color.ink, lineWidth: 2).padding(28))
-                    PlateBuddy(mood: .calm, size: 72)
-                }.frame(width: 140, height: 140).rotationEffect(.degrees(spins * 360))
-                WobbleSticker(emoji: "🥄", size: 26)
-            }
+        Button { withAnimation(reduced ? nil : .spring(response: 1, dampingFraction: 0.7)) { spins += 1 } } label: {
+            ZStack {
+                Circle().fill(AngularGradient(colors: [.ube, .bubble, .butter, .matcha, .sky, .ube], center: .center))
+                    .blur(radius: 18).padding(22)
+                    .rotationEffect(.degrees(turning ? 360 : 0))
+                Circle().fill(.clear).glassEffect(.regular, in: .circle).padding(10)
+                Image(systemName: "fork.knife").font(.system(size: 34, weight: .semibold)).foregroundStyle(Color.ink.opacity(0.8))
+            }.frame(width: 150, height: 150).rotationEffect(.degrees(spins * 360))
         }.buttonStyle(PlatePress())
-            .accessibilityLabel("Spin the plate").accessibilityHint("Decoration only; it doesn't change your food log")
+            .onAppear { guard !reduced else { return }; withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) { turning = true } }
+            .accessibilityLabel("Spin the orb").accessibilityHint("Decoration only; it doesn't change your food log")
     }
 }
-/// Sticker pills with a bouncy highlight that slides to your choice.
+/// Choices as real Liquid Glass. Two or three options use the system segmented control, whose glass selection
+/// can be dragged with a magnifying lens; more options become a row of glass chips with a tinted glass highlight
+/// that melts from chip to chip.
 struct PlateSegmentedControl: View {
     let options: [String]
     @Binding var selection: Int
-    @Namespace private var highlight
+    @Namespace private var glass
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, title in
-                Button { withAnimation(reduced ? nil : .spring(response: 0.38, dampingFraction: 0.6)) { selection = index } } label: {
-                    Text(title).font(.system(.subheadline, design: .rounded, weight: selection == index ? .black : .semibold))
-                        .foregroundStyle(selection == index ? Color.inkFixed : Color.ink.opacity(0.6))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity).padding(.vertical, 9)
-                        .background {
-                            if selection == index {
-                                Capsule().fill(Color.butter).overlay(Capsule().strokeBorder(Color.ink, lineWidth: 2))
-                                    .matchedGeometryEffect(id: "segment", in: highlight)
+        Group {
+            if options.count <= 3 {
+                Picker("", selection: $selection) {
+                    ForEach(options.indices, id: \.self) { index in Text(options[index]).tag(index) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    GlassEffectContainer(spacing: 8) {
+                        HStack(spacing: 8) {
+                            ForEach(options.indices, id: \.self) { index in
+                                let selected = selection == index
+                                Button { withAnimation(reduced ? nil : .spring(response: 0.42, dampingFraction: 0.75)) { selection = index } } label: {
+                                    Text(options[index]).font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                                        .padding(.horizontal, 16).padding(.vertical, 10)
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .glassEffect(selected ? Glass.regular.tint(Color.plateAccent).interactive() : Glass.regular.interactive(), in: .capsule)
+                                .glassEffectID(index, in: glass)
+                                .accessibilityAddTraits(selected ? .isSelected : [])
                             }
-                        }
-                        .contentShape(Capsule())
-                }.buttonStyle(PlatePress()).accessibilityAddTraits(selection == index ? .isSelected : [])
+                        }.padding(.vertical, 2).padding(.horizontal, 1)
+                    }
+                }.scrollClipDisabled()
             }
-        }.padding(4).background(Capsule().fill(Color.surface)).overlay(Capsule().strokeBorder(Color.ink, lineWidth: 2))
-            .sensoryFeedback(.selection, trigger: selection)
+        }
+        .sensoryFeedback(.selection, trigger: selection)
     }
 }
 struct PlatePageTitle: View {
     let eyebrow: String
     let title: String
     let subtitle: String
-    private var emoji: String {
-        let list = ["🍳", "🥑", "🍜", "🍓", "🌶️", "🍙", "🧋", "🥗", "🍩"]
-        return list[title.unicodeScalars.reduce(0) { $0 + Int($1.value) } % list.count]
-    }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) { SectionEyebrow(text: eyebrow); WobbleSticker(emoji: emoji, size: 18, draggable: true) }
-            Text(title).font(.system(size: 38, weight: .black, design: .rounded)).tracking(-1).foregroundStyle(Color.ink).fixedSize(horizontal: false, vertical: true)
-            Text(subtitle).font(.system(.subheadline, design: .rounded, weight: .medium)).foregroundStyle(Color.ink.opacity(0.6)).fixedSize(horizontal: false, vertical: true)
+            SectionEyebrow(text: eyebrow)
+            Text(title).font(.system(size: 40, weight: .bold)).tracking(-1.4).fixedSize(horizontal: false, vertical: true)
+            Text(subtitle).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// MARK: - The plate
+// MARK: - The energy ring
 
-/// Today as a plate seen from above, with Plato in the middle. Each meal is laid down clockwise as wedges of protein, carbs and fat;
-/// a full plate is the target, and anything past it spills onto the rim. Dots on the rim mark when you ate; the chili pin is now.
+/// Today's energy on a glass disc. The outer ring fills toward the target with a glowing tip; past it, a red ring traces the overflow.
+/// The inner ring shows how your calories split between protein, carbs and fat. Dots on the edge mark when you ate.
 struct PlateDial: View {
     let meals: [Meal]
     let target: Double
     let tint: Color
     @Environment(\.accessibilityReduceMotion) private var reduced
-    @Environment(\.plateMotionActive) private var motionActive
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var reach: Double = 0
+    @State private var split: Double = 0
     @State private var showRemaining = false
     @State private var tilt = CGSize.zero
-    @State private var wobble = false
-    @State private var orbit = false
-    @State private var chomp = 0
-    @State private var boing = 0
-    private let side: CGFloat = 236
-    private let bandWidth: CGFloat = 34
-    private struct Slice: Identifiable { let id: String; let start: Double; let end: Double; let color: Color }
-    private var eaten: Double { meals.reduce(0) { $0 + $1.total.calories } }
-    private var mood: DayStatus { DailyGuidance(eaten: .init(calories: eaten), target: Targets(nutrients: .init(calories: target))).state }
-    private var slices: [Slice] {
-        var cursor = 0.0
-        var result: [Slice] = []
-        let scale = 1 / max(1, target)
-        for meal in meals.sorted(by: { $0.timestamp < $1.timestamp }) {
-            let total = meal.total
-            let span = total.calories * scale
-            guard span > 0 else { continue }
-            let parts: [(key: String, kcal: Double, color: Color)] = [("p", total.protein * 4, .chili), ("c", total.carbs * 4, .butter), ("f", total.fat * 9, .matcha)]
-            let sum = parts.reduce(0) { $0 + $1.kcal }
-            let gap = min(0.008, span * 0.2)
-            var start = cursor
-            if sum <= 0 {
-                result.append(Slice(id: meal.id, start: start, end: start + span - gap, color: .sky))
-            } else {
-                for part in parts where part.kcal > 0 {
-                    let width = (span - gap) * part.kcal / sum
-                    result.append(Slice(id: meal.id + part.key, start: start, end: start + width, color: part.color))
-                    start += width
-                }
-            }
-            cursor += span
+    @State private var pulse = 0
+    @State private var breathe = false
+    private let side: CGFloat = 250
+    private var alert: LimitState { LimitState(value: eaten, target: target) }
+    private var auraColors: [Color] {
+        switch alert {
+        case .room: [.ube, .bubble, .sky, .ube]
+        case .near: [.butter, .chili, .butter]
+        case .over: [.overRed, .chili, .overRed]
         }
-        return result
+    }
+    private struct Segment: Identifiable { let id: String; let start: Double; let end: Double; let color: Color }
+    private var eaten: Double { meals.reduce(0) { $0 + $1.total.calories } }
+    private var segments: [Segment] {
+        let total = meals.reduce(Nutrients.zero) { $0 + $1.total }
+        let parts: [(String, Double, Color)] = [("p", total.protein * 4, .chili), ("c", total.carbs * 4, .butter), ("f", total.fat * 9, .matcha)]
+        let sum = parts.reduce(0) { $0 + $1.1 }
+        guard sum > 0 else { return [] }
+        var cursor = 0.0
+        return parts.filter { $0.1 > 0 }.map { part in
+            let width = part.1 / sum
+            defer { cursor += width }
+            return Segment(id: part.0, start: cursor + 0.012, end: cursor + width - 0.012, color: part.2)
+        }
     }
     private func dayFraction(_ date: Date) -> Double {
         let c = Calendar.current.dateComponents([.hour, .minute], from: date)
         return (Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60) / 24
     }
-    private func dominant(_ meal: Meal) -> Color {
-        let t = meal.total
-        let p = t.protein * 4, c = t.carbs * 4, f = t.fat * 9
-        return p >= c && p >= f ? .chili : c >= f ? .butter : .matcha
-    }
     var body: some View {
         Button {
-            withAnimation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.55)) { showRemaining.toggle() }
-            boing += 1
+            withAnimation(reduced ? nil : .spring(response: 0.45, dampingFraction: 0.8)) { showRemaining.toggle() }
+            pulse += 1
         } label: {
             ZStack {
-                orbiters
-                ZStack { plate; rim; band; well }
-                    .frame(width: side, height: side)
-                    .rotationEffect(.degrees(reduced ? 0 : wobble ? 2.5 : -2.5))
-                    .keyframeAnimator(initialValue: 1.0, trigger: boing) { view, scale in view.scaleEffect(scale) } keyframes: { _ in
-                        SpringKeyframe(0.93, duration: 0.1)
-                        SpringKeyframe(1.06, duration: 0.18)
-                        SpringKeyframe(1.0, duration: 0.4, spring: .bouncy)
-                    }
-                bubble.offset(x: side * 0.34, y: -side * 0.5)
+                // A soft aura that breathes behind the ring: violet with room, amber when close, red when over.
+                Circle().fill(AngularGradient(colors: auraColors, center: .center))
+                    .blur(radius: 34).opacity(alert == .room ? 0.35 : 0.55)
+                    .scaleEffect(breathe ? 1.04 : 0.9)
+                    .animation(reduced ? nil : .easeInOut(duration: alert == .over ? 0.9 : 2.4).repeatForever(autoreverses: true), value: breathe)
+                    .animation(.easeInOut(duration: 0.8), value: alert)
+                if alert == .over { WarningRipple(color: .overRed) }
+                disc
+                ring
+                inner
+                center
             }
-            .frame(width: side + 60, height: side + 70)
-            .rotation3DEffect(.degrees(reduced ? 0 : Double(tilt.width / 8)), axis: (x: 0, y: 1, z: 0))
-            .rotation3DEffect(.degrees(reduced ? 0 : Double(-tilt.height / 8)), axis: (x: 1, y: 0, z: 0))
+            .frame(width: side, height: side)
+            .keyframeAnimator(initialValue: 1.0, trigger: pulse) { view, scale in view.scaleEffect(scale) } keyframes: { _ in
+                SpringKeyframe(0.97, duration: 0.1)
+                SpringKeyframe(1.0, duration: 0.4)
+            }
+            .rotation3DEffect(.degrees(reduced ? 0 : Double(tilt.width / 9)), axis: (x: 0, y: 1, z: 0))
+            .rotation3DEffect(.degrees(reduced ? 0 : Double(-tilt.height / 9)), axis: (x: 1, y: 0, z: 0))
         }.buttonStyle(.plain)
-            .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { tilt = CGSize(width: max(-70, min(70, $0.translation.width)), height: max(-70, min(70, $0.translation.height))) }.onEnded { _ in withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.4)) { tilt = .zero } })
-            .sensoryFeedback(.impact(weight: .medium), trigger: boing)
-            .sensoryFeedback(.success, trigger: chomp)
+            .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { tilt = CGSize(width: max(-60, min(60, $0.translation.width)), height: max(-60, min(60, $0.translation.height))) }.onEnded { _ in withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.6)) { tilt = .zero } })
+            .sensoryFeedback(.impact(weight: .light), trigger: pulse)
+            .sensoryFeedback(.warning, trigger: alert) { _, new in new != .room }
             .onAppear {
-                guard !reduced else { reach = eaten / max(1, target); return }
-                withAnimation(.spring(response: 1.6, dampingFraction: 0.75).delay(0.25)) { reach = eaten / max(1, target) }
-                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) { wobble = true }
-                withAnimation(.linear(duration: 40).repeatForever(autoreverses: false)) { orbit = true }
+                guard !reduced else { reach = eaten / max(1, target); split = 1; return }
+                breathe = true
+                withAnimation(.spring(response: 1.6, dampingFraction: 0.85).delay(0.2)) { reach = eaten / max(1, target) }
+                withAnimation(.spring(response: 1.4, dampingFraction: 0.85).delay(0.5)) { split = 1 }
             }
-            .onChange(of: eaten) { old, new in
-                if new > old { chomp += 1 }
-                withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.65)) { reach = new / max(1, target) }
-            }
-            .onChange(of: target) { _, newValue in withAnimation(reduced ? nil : .spring(response: 1, dampingFraction: 0.7)) { reach = eaten / max(1, newValue) } }
+            .onChange(of: eaten) { _, new in withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.8)) { reach = new / max(1, target) } }
+            .onChange(of: target) { _, new in withAnimation(reduced ? nil : .spring(response: 1, dampingFraction: 0.8)) { reach = eaten / max(1, new) } }
             .accessibilityLabel("\(Int(eaten)) of \(Int(target)) calories across \(meals.count) \(meals.count == 1 ? "meal" : "meals"). Tap to switch between eaten and remaining.")
     }
-    /// Food stickers circling the plate.
-    private var orbiters: some View {
-        ZStack {
-            ForEach(Array(["🍳", "🥑", "🍗", "🍚"].enumerated()), id: \.offset) { index, emoji in
-                Text(emoji).font(.system(size: 22))
-                    .rotationEffect(.degrees(orbit ? -360 : 0))
-                    .offset(y: -side * 0.6)
-                    .rotationEffect(.degrees(Double(index) * 90 + 20))
-            }
-        }.rotationEffect(.degrees(orbit ? 360 : 0)).accessibilityHidden(true)
+    @ViewBuilder private var disc: some View {
+        if reduceTransparency { Circle().fill(Color.surface) }
+        else { Circle().fill(.clear).glassEffect(.regular, in: .circle) }
     }
-    private var plate: some View {
-        ZStack {
-            Circle().fill(Color.surface)
-            Circle().strokeBorder(Color.ink, lineWidth: 3)
-            Circle().strokeBorder(Color.ink.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 7])).padding(side * 0.1)
-        }
-    }
-    private var rim: some View {
-        let radius = side * 0.445
-        let now = dayFraction(.now)
+    private var ring: some View {
+        let fill = min(1, reach)
+        let radius = side / 2 - 22
         return ZStack {
-            ForEach(0..<24, id: \.self) { hour in
-                Capsule().fill(Color.ink.opacity(hour % 6 == 0 ? 0.8 : 0.25))
-                    .frame(width: hour % 6 == 0 ? 2.5 : 1.5, height: hour % 6 == 0 ? 9 : 5)
-                    .offset(y: -radius).rotationEffect(.degrees(Double(hour) / 24 * 360))
-            }
-            ForEach(meals) { meal in
-                Circle().fill(dominant(meal)).frame(width: 11, height: 11).overlay(Circle().strokeBorder(Color.ink, lineWidth: 1.5))
-                    .offset(y: -radius).rotationEffect(.degrees(dayFraction(meal.timestamp) * 360))
-                    .transition(.scale(scale: 0.1).combined(with: .opacity))
-            }
-            Image(systemName: "mappin").font(.system(size: 15, weight: .black)).foregroundStyle(Color.chili)
-                .offset(y: -radius - 4).rotationEffect(.degrees(now * 360))
-        }
-    }
-    private var band: some View {
-        let diameter = side * 0.6
-        return ZStack {
-            Circle().stroke(Color.ink.opacity(0.06), lineWidth: bandWidth).frame(width: diameter, height: diameter)
-            ForEach(slices) { slice in
-                let from = min(slice.start, 1)
-                Circle().trim(from: from, to: max(from, min(slice.end, reach, 1)))
-                    .stroke(slice.color, style: StrokeStyle(lineWidth: bandWidth, lineCap: .butt))
-                    .rotationEffect(.degrees(-90)).frame(width: diameter, height: diameter)
-            }
-            Circle().stroke(Color.ink, lineWidth: 2).frame(width: diameter + bandWidth, height: diameter + bandWidth)
-            Circle().stroke(Color.ink, lineWidth: 2).frame(width: diameter - bandWidth, height: diameter - bandWidth)
-            // Past the target, food spills onto the rim.
+            Circle().stroke(Color.primary.opacity(0.07), lineWidth: 18).padding(13)
+            Circle().trim(from: 0, to: fill)
+                .stroke(AngularGradient(colors: [.ube, .bubble, .chili, .butter], center: .center, startAngle: .degrees(0), endAngle: .degrees(360 * max(0.05, fill))), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .rotationEffect(.degrees(-90)).padding(13)
+            // The tip of the ring.
+            Circle().fill(.white).frame(width: 8, height: 8)
+                .offset(y: -radius).rotationEffect(.degrees(fill * 360)).opacity(fill > 0.02 ? 1 : 0)
+            // Past the target, a thin red ring traces the overflow.
             Circle().trim(from: 0, to: min(1, max(0, reach - 1)))
-                .stroke(Color.overRed, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                .rotationEffect(.degrees(-90)).frame(width: side * 0.8, height: side * 0.8)
+                .stroke(Color.overRed, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90)).padding(1)
+            ForEach(meals) { meal in
+                Circle().fill(Color.primary.opacity(0.55)).frame(width: 4, height: 4)
+                    .offset(y: -(side / 2 - 3)).rotationEffect(.degrees(dayFraction(meal.timestamp) * 360))
+            }
         }
     }
-    private var well: some View {
+    private var inner: some View {
         ZStack {
-            Circle().fill(tint.opacity(0.9)).frame(width: side * 0.44, height: side * 0.44)
-                .overlay(Circle().strokeBorder(Color.ink, lineWidth: 2.5))
-            PlateBuddy(mood: mood, size: side * 0.4, look: tilt, chomp: chomp)
+            Circle().stroke(Color.primary.opacity(0.05), lineWidth: 6).padding(44)
+            ForEach(segments) { segment in
+                Circle().trim(from: segment.start * split, to: max(segment.start * split, segment.end * split))
+                    .stroke(segment.color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90)).padding(44)
+            }
         }
     }
-    /// Plato's speech bubble with today's number.
-    private var bubble: some View {
-        let value = reach * max(1, target)
-        let remaining = target - value
-        return VStack(alignment: .leading, spacing: 0) {
-            Text(Int((showRemaining ? abs(remaining) : value).rounded()), format: .number)
-                .font(.system(size: 26, weight: .black, design: .rounded)).foregroundStyle(Color.ink)
-                .contentTransition(.numericText(value: value)).lineLimit(1).minimumScaleFactor(0.6)
-            Text(showRemaining ? (remaining < 0 ? "kcal over!" : "kcal left") : "kcal eaten").font(.system(size: 11, weight: .heavy, design: .rounded)).foregroundStyle(Color.ink.opacity(0.65))
-            Text("of \(Int(target))").font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(Color.ink.opacity(0.45))
+    private var center: some View {
+        let remaining = target - eaten
+        return VStack(spacing: 2) {
+            Text(Int((showRemaining ? abs(remaining) : eaten).rounded()), format: .number)
+                .font(.system(size: 50, weight: .bold, design: .rounded)).tracking(-1.5)
+                .contentTransition(.numericText(value: showRemaining ? remaining : eaten)).lineLimit(1).minimumScaleFactor(0.5)
+            Text(showRemaining ? (remaining < 0 ? "kcal over" : "kcal left") : "kcal eaten").font(.footnote.weight(.semibold)).foregroundStyle(tint)
+            Text("of \(Int(target))").font(.caption2).foregroundStyle(.secondary)
+        }.frame(width: side - 110)
+    }
+}
+
+// MARK: - Limits
+
+/// Where a number sits against its target: plenty of room, getting close (85% and up), or past it.
+enum LimitState: Equatable {
+    case room, near, over
+    init(value: Double, target: Double) {
+        guard target > 0 else { self = .room; return }
+        let ratio = value / target
+        self = ratio > 1.0 ? .over : ratio >= 0.85 ? .near : .room
+    }
+    var color: Color { switch self { case .room: Color.ube; case .near: .butter; case .over: .overRed } }
+}
+/// Red rings that keep rippling outward while something is over its target.
+struct WarningRipple: View {
+    let color: Color
+    var cornerRadius: CGFloat? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        if !reduced {
+            Group {
+                if let cornerRadius { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(color, lineWidth: 2) }
+                else { Circle().strokeBorder(color, lineWidth: 2) }
+            }
+            .phaseAnimator([false, true]) { view, out in
+                view.scaleEffect(out ? 1.06 : 1).opacity(out ? 0 : 0.8)
+            } animation: { out in out ? .easeOut(duration: 1.3) : .linear(duration: 0.01) }
+            .allowsHitTesting(false).accessibilityHidden(true)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.surface))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.ink, lineWidth: 2))
-        .overlay(alignment: .bottomLeading) {
-            Rectangle().fill(Color.surface).frame(width: 12, height: 12)
-                .overlay(Rectangle().strokeBorder(Color.ink, lineWidth: 2))
-                .rotationEffect(.degrees(45)).offset(x: 16, y: 6).mask(Rectangle().offset(y: 8))
-        }
-        .rotationEffect(.degrees(reduced ? 0 : wobble ? 4 : -2))
-        .frame(width: 112)
     }
 }
 
 // MARK: - Macro tiles
 
-/// A bar with candy stripes that keep sliding while the app is open.
-struct WiggleBar: View {
-    let progress: Double
-    let tint: Color
-    @Environment(\.accessibilityReduceMotion) private var reduced
-    @Environment(\.plateMotionActive) private var motionActive
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width * min(1, max(0, progress))
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.ink.opacity(0.07))
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: reduced || !motionActive)) { timeline in
-                    let shift = reduced ? 0 : (timeline.date.timeIntervalSinceReferenceDate * 16).truncatingRemainder(dividingBy: 12)
-                    Canvas { context, size in
-                        context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(tint))
-                        var x = CGFloat(shift) - size.height - 12
-                        while x < size.width {
-                            var stripe = Path()
-                            stripe.move(to: CGPoint(x: x, y: size.height))
-                            stripe.addLine(to: CGPoint(x: x + size.height, y: 0))
-                            stripe.addLine(to: CGPoint(x: x + size.height + 5, y: 0))
-                            stripe.addLine(to: CGPoint(x: x + 5, y: size.height))
-                            stripe.closeSubpath()
-                            context.fill(stripe, with: .color(.white.opacity(0.3)))
-                            x += 12
-                        }
-                    }
-                }.frame(width: width).clipShape(Capsule())
-                Capsule().strokeBorder(Color.ink, lineWidth: 1.5)
-            }
-        }
-    }
-}
+/// One macro: equal-size glass tile with a single-line label, a bar, and a warning that animates
+/// when you're close to the target (amber, pulsing) or past it (red, a shake and a ripple).
 struct NutrientTile: View {
     let name: String
     let symbol: String
     let value: Double
     let target: Double
     let tint: Color
-    @State private var expanded = false
     @State private var grown = false
     @Environment(\.accessibilityReduceMotion) private var reduced
+    private var state: LimitState { LimitState(value: value, target: target) }
+    private var caption: String {
+        switch state {
+        case .room: "of \(Int(target)) g"
+        case .near: "\(Int(max(0, target - value).rounded(.up))) g to go"
+        case .over: "Over +\(Int((value - target).rounded(.up))) g"
+        }
+    }
     var body: some View {
-        Button { withAnimation(reduced ? nil : .spring(response: 0.4, dampingFraction: 0.6)) { expanded.toggle() } } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: symbol).font(.system(size: 13, weight: .black)).foregroundStyle(Color.inkFixed)
-                        .frame(width: 30, height: 30).background(Circle().fill(tint)).overlay(Circle().strokeBorder(Color.ink, lineWidth: 2))
-                        .rotationEffect(.degrees(expanded ? 14 : -8))
-                    Spacer(minLength: 0)
-                    Image(systemName: expanded ? "minus" : "plus").font(.caption2.weight(.black)).foregroundStyle(Color.ink.opacity(0.5))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(tint).frame(width: 8, height: 8)
+                Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+                if state == .near {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption2.weight(.bold)).foregroundStyle(Color.butter)
+                        .symbolEffect(.pulse, options: .repeating, isActive: !reduced).transition(.scale.combined(with: .opacity))
+                } else if state == .over {
+                    Image(systemName: "exclamationmark.circle.fill").font(.caption.weight(.bold)).foregroundStyle(Color.overRed)
+                        .symbolEffect(.breathe, isActive: !reduced).transition(.scale.combined(with: .opacity))
                 }
-                Text(name.uppercased()).font(.system(size: 10, weight: .black, design: .rounded)).tracking(0.8).foregroundStyle(Color.ink.opacity(0.6))
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text(Int(value), format: .number).font(.system(size: 26, weight: .black, design: .rounded)).foregroundStyle(Color.ink).contentTransition(.numericText())
-                    Text("g").font(.caption.weight(.bold)).foregroundStyle(Color.ink.opacity(0.5))
-                }
-                WiggleBar(progress: grown || reduced ? value / max(1, target) : 0, tint: tint).frame(height: 11)
-                    .onAppear { withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.6).delay(0.35)) { grown = true } }
-                    .animation(reduced ? nil : .spring(response: 0.8, dampingFraction: 0.6), value: value)
-                if expanded { Text("\(Int(max(0, target - value))) g left\nTarget \(Int(target)) g").font(.caption2.weight(.semibold)).foregroundStyle(Color.ink.opacity(0.6)).fixedSize(horizontal: false, vertical: true).transition(.scale(scale: 0.8, anchor: .top).combined(with: .opacity)) }
-            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.surface))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.ink, lineWidth: 2))
-        }.buttonStyle(PlatePress()).accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams").accessibilityHint("Show remaining grams")
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text(Int(value), format: .number).font(.system(size: 26, weight: .bold, design: .rounded)).tracking(-0.5)
+                    .lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
+                Text("g").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            GeometryReader { geometry in
+                Capsule().fill(Color.primary.opacity(0.08))
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(state == .over ? Color.overRed : tint)
+                            .frame(width: geometry.size.width * (grown || reduced ? min(1, max(0, value / max(1, target))) : 0))
+                    }
+            }.frame(height: 6)
+            Text(caption).font(.caption2.weight(state == .room ? .medium : .bold))
+                .foregroundStyle(state == .room ? AnyShapeStyle(.secondary) : AnyShapeStyle(state.color))
+                .lineLimit(1).minimumScaleFactor(0.7).contentTransition(.numericText())
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
+        .plateCard()
+        .overlay {
+            if state != .room {
+                RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(state.color.opacity(0.75), lineWidth: 1.5).allowsHitTesting(false)
+            }
+        }
+        .overlay { if state == .over { WarningRipple(color: .overRed, cornerRadius: 28) } }
+        .keyframeAnimator(initialValue: 0.0, trigger: state) { view, x in view.offset(x: x) } keyframes: { _ in
+            KeyframeTrack {
+                LinearKeyframe(-7, duration: 0.06)
+                LinearKeyframe(7, duration: 0.08)
+                LinearKeyframe(-4, duration: 0.07)
+                LinearKeyframe(4, duration: 0.07)
+                SpringKeyframe(0, duration: 0.25)
+            }
+        }
+        .animation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.75), value: state)
+        .animation(reduced ? nil : .spring(response: 0.8, dampingFraction: 0.8), value: value)
+        .sensoryFeedback(.warning, trigger: state) { _, new in new != .room }
+        .onAppear { withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.85).delay(0.3)) { grown = true } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams. \(caption)")
     }
 }
 
 struct PlateCalendar: View {
     @Binding var selection: Date
+    @Namespace private var highlight
     @State private var month = Calendar.current.dateInterval(of: .month, for: .now)!.start
     @Environment(\.accessibilityReduceMotion) private var reduced
     private var calendar: Calendar { .current }
@@ -731,8 +615,8 @@ struct PlateCalendar: View {
                     else {
                         let day = calendar.date(byAdding: .day, value: cell-leading, to: month) ?? month
                         let active = calendar.isDate(day, inSameDayAs: selection)
-                        Button { withAnimation(reduced ? nil : .smooth) { selection = day } } label: {
-                            Text("\(cell-leading+1)").font(.system(.subheadline, design: .rounded, weight: active ? .bold : .medium)).frame(maxWidth: .infinity).frame(height: 36).background(active ? Color.plateAccent.opacity(0.25) : .clear, in: .circle).overlay(Circle().stroke(calendar.isDateInToday(day) ? Color.plateAccent : .clear))
+                        Button { withAnimation(reduced ? nil : Motion.fluid) { selection = day } } label: {
+                            Text("\(cell-leading+1)").font(.system(.subheadline, design: .rounded, weight: active ? .bold : .medium)).frame(maxWidth: .infinity).frame(height: 36).foregroundStyle(active ? AnyShapeStyle(.white) : AnyShapeStyle(.primary)).background { if active { Circle().fill(.clear).glassEffect(Glass.regular.tint(Color.plateAccent).interactive(), in: .circle).matchedGeometryEffect(id: "calendar-day", in: highlight) } }.overlay(Circle().stroke(calendar.isDateInToday(day) ? Color.plateAccent : .clear))
                         }.disabled(day > Date.now).accessibilityLabel(day.formatted(date: .complete, time: .omitted)).accessibilityAddTraits(active ? .isSelected : [])
                     }
                 }
@@ -742,7 +626,7 @@ struct PlateCalendar: View {
             .onChange(of: selection) { _, value in month = calendar.dateInterval(of: .month, for: value)?.start ?? month }
     }
     private func move(_ amount: Int) {
-        withAnimation(reduced ? nil : .smooth) { month = calendar.date(byAdding: .month, value: amount, to: month) ?? month }
+        withAnimation(reduced ? nil : Motion.fluid) { month = calendar.date(byAdding: .month, value: amount, to: month) ?? month }
     }
 }
 
@@ -753,50 +637,45 @@ extension EnvironmentValues {
         set { self[PlateMotionActiveKey.self] = newValue }
     }
 }
-/// Cards pop in one after another with a little tilt and bounce.
+/// Cards drift up out of a soft blur, one after another.
 private struct PlateEntrance: ViewModifier {
     let order: Int
     @State private var appeared = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     func body(content: Content) -> some View {
         content.opacity(appeared || reduced ? 1 : 0)
-            .scaleEffect(appeared || reduced ? 1 : 0.88)
-            .rotationEffect(.degrees(appeared || reduced ? 0 : (order.isMultiple(of: 2) ? -3 : 3)))
-            .offset(y: appeared || reduced ? 0 : 28)
-            .onAppear { withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.62).delay(Double(min(order, 6)) * 0.07)) { appeared = true } }
+            .blur(radius: appeared || reduced ? 0 : 12)
+            .offset(y: appeared || reduced ? 0 : 18)
+            .onAppear { withAnimation(reduced ? nil : .spring(response: 0.7, dampingFraction: 0.88).delay(Double(min(order, 6)) * 0.07)) { appeared = true } }
     }
 }
 extension View { func plateEntrance(_ order: Int = 0) -> some View { modifier(PlateEntrance(order: order)) } }
 
-/// Emoji confetti that bursts out when you log food or hit your target.
+/// A soft burst of coloured light when you log food or hit your target.
 struct SparkBurst: View {
     let trigger: Int
     let tint: Color
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        ZStack { if trigger > 0 && !reduced { ConfettiPop().id(trigger) } }
+        ZStack { if trigger > 0 && !reduced { LightBurst(tint: tint).id(trigger) } }
             .allowsHitTesting(false).accessibilityHidden(true)
     }
 }
-private struct ConfettiPop: View {
+private struct LightBurst: View {
+    let tint: Color
     @State private var fired = false
-    @State private var faded = false
-    private static let pieces = ["✨", "🎉", "⭐️", "💥", "🍓", "🥑", "💚", "🔥"]
     var body: some View {
         ZStack {
-            ForEach(0..<18, id: \.self) { index in
-                let angle = Double(index) / 18 * 2 * .pi
-                let distance: Double = index.isMultiple(of: 2) ? 160 : 115
-                Text(Self.pieces[index % Self.pieces.count]).font(.system(size: index % 3 == 0 ? 28 : 18))
-                    .scaleEffect(fired ? 1 : 0.2)
-                    .rotationEffect(.degrees(fired ? Double(index * 47 % 360) : 0))
-                    .offset(x: fired ? cos(angle) * distance : 0, y: fired ? sin(angle) * distance + 50 : 0)
-                    .opacity(faded ? 0 : 1)
+            Circle().stroke(tint.opacity(fired ? 0 : 0.5), lineWidth: 2).scaleEffect(fired ? 1.6 : 0.6)
+            ForEach(0..<14, id: \.self) { index in
+                let angle = Double(index) / 14 * 2 * .pi
+                Circle().fill([Color.ube, .chili, .butter, .matcha][index % 4])
+                    .frame(width: 6, height: 6)
+                    .offset(x: fired ? cos(angle) * 150 : cos(angle) * 60, y: fired ? sin(angle) * 150 : sin(angle) * 60)
+                    .opacity(fired ? 0 : 0.9)
             }
-        }.onAppear {
-            withAnimation(.spring(response: 0.75, dampingFraction: 0.6)) { fired = true }
-            withAnimation(.easeIn(duration: 0.6).delay(0.75)) { faded = true }
-        }
+        }.frame(width: 260, height: 260)
+            .onAppear { withAnimation(.easeOut(duration: 0.9)) { fired = true } }
     }
 }
 
