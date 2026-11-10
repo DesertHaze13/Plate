@@ -3,8 +3,8 @@
     {
       "value": {
         "linear-gradient": [
-          "extended-srgb:1.0,0.898,0.859,1",
-          "extended-srgb:0.867,0.824,1.0,1"
+          "extended-srgb:0.486,0.361,1.0,1",
+          "extended-srgb:0.227,0.102,0.667,1"
         ]
       }
     },
@@ -12,91 +12,59 @@
       "appearance": "dark",
       "value": {
         "linear-gradient": [
-          "extended-srgb:0.133,0.086,0.282,1",
-          "extended-srgb:0.039,0.027,0.094,1"
+          "extended-srgb:0.118,0.071,0.251,1",
+          "extended-srgb:0.031,0.024,0.078,1"
         ]
       }
     }
   ],
   "groups": [
     {
-      "name": "AI spark",
-      "lighting": "individual",
-      "specular": true,
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.3
-      },
-      "layers": [
-        {
-          "image-name": "spark.png",
-          "name": "Spark and macro crumbs",
-          "glass": false,
-          "position": {
-            "scale": 1,
-            "translation-in-points": [
-              0,
-              0
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Bite P",
+      "name": "Macro ring",
       "lighting": "individual",
       "specular": true,
       "translucency": {
         "enabled": true,
-        "value": 0.2
+        "value": 0.15
       },
       "shadow": {
         "kind": "layer-color",
-        "opacity": 0.45
+        "opacity": 0.35
       },
       "layers": [
         {
-          "image-name": "ring.png",
-          "name": "Bite P on the plate",
+          "image-name": "macros.png",
+          "name": "Protein, carbs, fat",
           "glass": true,
           "position": {
             "scale": 1,
-            "translation-in-points": [
-              0,
-              0
-            ]
+            "translation-in-points": [0, 0]
           }
         }
       ]
     },
     {
-      "name": "Porcelain plate",
+      "name": "Bitten plate",
       "lighting": "individual",
       "specular": true,
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.28
+        "opacity": 0.4
       },
       "layers": [
         {
           "image-name": "plate.png",
-          "name": "Plate rim and well",
+          "name": "Porcelain plate with a bite",
           "glass": false,
           "position": {
             "scale": 1,
-            "translation-in-points": [
-              0,
-              0
-            ]
+            "translation-in-points": [0, 0]
           }
         }
       ]
     }
   ],
   "supported-platforms": {
-    "squares": [
-      "iOS",
-      "macOS"
-    ]
+    "squares": ["iOS", "macOS"]
   }
 }

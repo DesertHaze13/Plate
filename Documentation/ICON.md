@@ -11,4 +11,4 @@ Open `Resources/Plate.icon` in Apple's Icon Composer. It is a layered Liquid Gla
 2. **Bite P** (glass). Specular highlights, 20% translucency and a coloured shadow, so it reads as a glass object floating over the fill. In the clear and tinted appearances, the system turns this into frosted glass.
 3. **AI spark** (on top). A neutral shadow lifts it off the P.
 
-The layer images are `Assets/plate.png` (porcelain plate, bottom), `Assets/ring.png` (the bitten P sitting on the plate, glass) and `Assets/spark.png` (AI spark, top), rendered at 1024 × 1024 from `Resources/Icon Sources/plate.svg`, `ring.svg` and `spark.svg`. Edit the SVGs, re-render them to PNG, and preview Default, Dark, Clear and Tinted in Icon Composer.
+The layer images are `Assets/plate.png` (a porcelain plate with a bite taken out of its rim, bottom) and `Assets/macros.png` (the protein, carbs and fat ring in the plate's well, glass, top), rendered at 1024 × 1024 from `Resources/Icon Sources/plate.svg` and `macros.svg`. The statement: a plate you've already started, measured. Edit the SVGs, re-render them to PNG, and preview Default, Dark, Clear and Tinted in Icon Composer.
