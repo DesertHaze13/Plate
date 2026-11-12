@@ -8,6 +8,7 @@ import UIKit
 #endif
 
 struct CaptureView: View {
+    var startWithDescription = false
     @Environment(PlateModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -45,7 +46,7 @@ struct CaptureView: View {
                         Button { markingPhoto = true } label: { Label(excludedRegions.isEmpty ? "Mark food I won’t eat" : "Edit crossed-out areas", systemImage: "pencil.tip.crop.circle") }.buttonStyle(.bordered).disabled(analyzing || saving)
                         Text("Tap a food on the photo to cross it out. For a small part of a mixed plate, mark that area and recheck. Tap a food’s name below to adjust the amount eaten.").font(.caption).foregroundStyle(.secondary)
                     }
-                    else { inputOptions }
+                    else if items.isEmpty && !startWithDescription { inputOptions }
                     if analyzing {
                         HStack { ProgressView(); VStack(alignment: .leading) { Text("Reading your plate…").font(.headline); Text("Looking for food, labels and serving sizes.").font(.caption).foregroundStyle(.secondary) } }.padding()
                     }
@@ -115,9 +116,10 @@ struct CaptureView: View {
             }
             .dropDestination(for: Data.self) { values, _ in guard let data = values.first else { return false }; receive(data); return true }
             .task {
+                if startWithDescription { describing = DescribeTarget(item: nil) }
                 if let data = model.importedPhoto { model.importedPhoto = nil; receive(data) }
                 #if os(iOS)
-                if photo == nil, UserDefaults(suiteName: SharedSnapshot.appGroup)?.bool(forKey: "directCamera") == true {
+                if photo == nil, !startWithDescription, UserDefaults(suiteName: SharedSnapshot.appGroup)?.bool(forKey: "directCamera") == true {
                     UserDefaults(suiteName: SharedSnapshot.appGroup)?.set(false, forKey: "directCamera"); camera = UIImagePickerController.isSourceTypeAvailable(.camera)
                 }
                 #endif

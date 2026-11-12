@@ -58,29 +58,27 @@ struct FoundationView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     HStack(spacing: 13) {
-                        Image(systemName: "circle.inset.filled").font(.system(size: 32, weight: .medium)).foregroundStyle(Color.plateAccent).frame(width: 56, height: 56).background(Color.plateAccent.opacity(0.13), in: .rect(cornerRadius: 20))
+                        PlateMark(size: 46)
                         VStack(alignment: .leading, spacing: 4) { Text("PLATE").font(.system(size: 22, weight: .black, design: .rounded)).tracking(3); Text("Good energy, daily.").font(.caption).foregroundStyle(.secondary) }
                     }.padding(.top, 22)
-                    SectionEyebrow(text: "YOUR DAILY SPACE")
                     VStack(spacing: 10) {
                         ForEach(Destination.allCases) { item in
                             Button { withAnimation(reducedMotion ? nil : .spring(response: 0.42, dampingFraction: 0.8)) { destination = item } } label: {
-                                HStack(spacing: 13) {
-                                    PlateIconTile(symbol: item.icon, tint: item.tint)
-                                    VStack(alignment: .leading, spacing: 4) { Text(item.rawValue).font(.system(.headline, design: .rounded)); Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                                HStack(spacing: 14) {
+                                    Image(systemName: item.icon).font(.system(size: 18, weight: .medium))
+                                        .frame(width: 24).foregroundStyle(destination == item ? .white : Color.plateAccent)
+                                    Text(item.rawValue).font(.system(.subheadline, design: .rounded, weight: destination == item ? .semibold : .regular))
                                     Spacer(minLength: 0)
-                                    if destination == item { Circle().fill(item.tint).frame(width: 5, height: 5) }
-                                }.padding(12).background {
-                                    if destination == item { RoundedRectangle(cornerRadius: 22).fill(item.tint.opacity(0.12)).overlay(RoundedRectangle(cornerRadius: 22).stroke(item.tint.opacity(0.2))).matchedGeometryEffect(id: "sidebar-selection", in: sidebarSelection) }
-                                }
+                                }.padding(.horizontal, 18).frame(minHeight: 46)
+                                    .foregroundStyle(destination == item ? .white : Color.primary)
+                                    .background {
+                                        if destination == item {
+                                            Capsule().fill(Color.plateAccent.gradient).matchedGeometryEffect(id: "sidebar-selection", in: sidebarSelection)
+                                        }
+                                    }
                             }.buttonStyle(PlatePress()).foregroundStyle(.primary).accessibilityAddTraits(destination == item ? .isSelected : [])
                         }
                     }
-                    VStack(alignment: .leading, spacing: 12) {
-                        SectionEyebrow(text: "A LITTLE REMINDER")
-                        Text("Progress starts\nwith your next plate.").font(.system(.title3, design: .rounded, weight: .bold))
-                        Image(systemName: "leaf.fill").font(.title).foregroundStyle(Color.plateAccent)
-                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading).plateCard()
                     Label(model.sync.status, systemImage: model.sync.userID == nil ? "internaldrive" : "checkmark.icloud").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
                 }.padding(18)
             }.background(PlateBackground(status: .calm)).navigationSplitViewColumnWidth(min: 245, ideal: 265)
@@ -128,6 +126,7 @@ struct TodayView: View {
     @Environment(PlateModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var mealCount: Int { model.store.today.count }
+    @State private var showTextCapture = false
     @State private var storyMode = 0
     @State private var mealFilter = 0
     private var visibleMeals: [Meal] { model.store.today.filter { mealFilter == 0 || $0.type == MealType.allCases[mealFilter - 1] } }
@@ -155,6 +154,7 @@ struct TodayView: View {
         .animation(reduceMotion ? nil : .spring(response: 0.55, dampingFraction: 0.8), value: mealCount)
         .sensoryFeedback(.success, trigger: model.store.guidance.state == .hit && overages.isEmpty)
         .sensoryFeedback(.warning, trigger: overages.map(\.id))
+        .sheet(isPresented: $showTextCapture) { CaptureView(startWithDescription: true).environment(model) }
     }
     private var todayContent: some View {
         GeometryReader { geometry in
@@ -169,7 +169,8 @@ struct TodayView: View {
                     layout {
                         VStack(spacing: 22) {
                             dashboardHeader.plateEntrance(0)
-                            quickCapture.plateEntrance(1)
+                            textCapture.plateEntrance(1)
+                            quickCapture.plateEntrance(2)
                             if !model.energyDays.isEmpty { MovementCard().plateEntrance(2) }
                             if wide { DailySummaryCard(meals: model.store.today, target: model.store.effectiveTargets) }
                         }.frame(maxWidth: .infinity)
@@ -226,6 +227,20 @@ struct TodayView: View {
             Text("A quick photo, a familiar favourite, or something new. Every meal is a fresh start.").font(.subheadline).foregroundStyle(.secondary)
             Button { model.showCapture = true } label: { Label("Add your first plate", systemImage: "plus").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(15).background(Color.plateAccent.opacity(0.15), in: .capsule) }.buttonStyle(PlatePress())
         }.padding(24).plateCard()
+    }
+    private var textCapture: some View {
+        Button { showTextCapture = true } label: {
+            HStack(spacing: 16) {
+                PlateIconTile(symbol: "text.bubble.fill", tint: .plateAccent, size: 52)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Type what you ate").font(.system(.headline, design: .rounded))
+                    Text("\"Mie Gacoan level 3\", \"Kopi Kenangan Mantan\" · no photo needed")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "sparkles").foregroundStyle(Color.plateAccent)
+            }.padding(22).plateCard()
+        }.buttonStyle(PlatePress()).foregroundStyle(.primary)
     }
     private var quickCapture: some View {
         Button { model.showCapture = true } label: {
@@ -300,18 +315,15 @@ struct TodayView: View {
                 Spacer()
                 Text(overages.isEmpty ? model.store.guidance.title : "TARGET TERLEWATI").font(.caption.weight(.semibold)).foregroundStyle(model.store.guidance.state.color).padding(.horizontal, 10).padding(.vertical, 7).background(model.store.guidance.state.color.opacity(0.10), in: .capsule)
             }
-            PlateDial(meals: model.store.today, target: model.store.effectiveTargets.nutrients.calories, tint: model.store.guidance.state.color)
+            PlateDial(meals: model.store.today, target: model.store.effectiveTargets.nutrients.calories, tint: model.store.guidance.state.color, macroTargets: model.store.effectiveTargets.nutrients)
                 .overlay { SparkBurst(trigger: burst, tint: model.store.guidance.state.color) }
-            Text("Tap the plate to explore your energy").font(.caption2).foregroundStyle(.secondary)
+            Text("Tap the ring to switch eaten and left").font(.caption2).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 9) {
-                NutrientTile(name: "Protein", symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: overages.contains { $0.id == "protein" } ? .red : .plateAccent)
+                NutrientTile(name: "Protein", symbol: "bolt.fill", value: model.store.todayTotal.protein, target: model.store.effectiveTargets.nutrients.protein, tint: overages.contains { $0.id == "protein" } ? .red : .plateProtein)
                 NutrientTile(name: "Carbs", symbol: "leaf.fill", value: model.store.todayTotal.carbs, target: model.store.effectiveTargets.nutrients.carbs, tint: overages.contains { $0.id == "carbs" } ? .red : .plateCarb)
                 NutrientTile(name: "Fat", symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: overages.contains { $0.id == "fat" } ? .red : .plateFat)
             }
-        }.padding(22)
-            .background(LinearGradient(colors: overages.isEmpty ? [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)] : [Color(red: 0.28, green: 0.035, blue: 0.055), Color(red: 0.10, green: 0.025, blue: 0.035)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 30))
-            .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(0.13)))
-            .environment(\.colorScheme, .dark)
+        }.padding(22).plateCard()
             .animation(reduceMotion ? nil : .spring(response: 0.7), value: model.store.todayTotal)
     }
 }

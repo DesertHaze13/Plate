@@ -15,7 +15,7 @@ enum PlateAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// Warm paper, sea-glass green and small accents of coral and lilac.
+/// The iPad palette: lilac, peach, mint and translucent glass.
 extension Color {
     static let glazeCharcoal = Color(red: 0.067, green: 0.063, blue: 0.059)
     static let glazeSlate = Color(red: 0.114, green: 0.106, blue: 0.098)
@@ -31,18 +31,19 @@ extension Color {
     #if os(iOS)
     static let plateAccent = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.36, green: 0.84, blue: 0.68, alpha: 1)
-            : UIColor(red: 0.08, green: 0.46, blue: 0.35, alpha: 1)
+            ? UIColor(red: 0.69, green: 0.58, blue: 1, alpha: 1)
+            : UIColor(red: 0.47, green: 0.31, blue: 0.96, alpha: 1)
     })
     #else
     static let plateAccent = Color(nsColor: NSColor(name: NSColor.Name("PlateAccent")) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(red: 0.36, green: 0.84, blue: 0.68, alpha: 1)
-            : NSColor(red: 0.08, green: 0.46, blue: 0.35, alpha: 1)
+            ? NSColor(red: 0.69, green: 0.58, blue: 1, alpha: 1)
+            : NSColor(red: 0.47, green: 0.31, blue: 0.96, alpha: 1)
     })
     #endif
-    static let plateCarb = terracotta
-    static let plateFat = Color(red: 0.65, green: 0.53, blue: 0.86)
+    static let plateProtein = Color(red: 0.98, green: 0.43, blue: 0.45)
+    static let plateCarb = Color(red: 1, green: 0.74, blue: 0.28)
+    static let plateFat = celadon
 }
 extension DayStatus {
     var color: Color { switch self { case .calm: Color.plateAccent; case .almost: .terracotta; case .hit: .celadon; case .over: .glazeRed } }
@@ -53,7 +54,7 @@ struct GlassCard: ViewModifier {
     func body(content: Content) -> some View {
         content.background {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(scheme == .dark ? Color(red: 0.09, green: 0.15, blue: 0.14) : .white.opacity(opaque ? 1 : 0.78))
+                .fill(scheme == .dark ? Color(red: 0.09, green: 0.15, blue: 0.14) : .white.opacity(opaque ? 1 : 0.50))
                 .overlay {
                     RoundedRectangle(cornerRadius: 26, style: .continuous)
                         .strokeBorder(scheme == .dark ? .white.opacity(0.12) : .white, lineWidth: 1)
@@ -70,23 +71,20 @@ struct PlateBackground: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.plateMotionActive) private var active
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                (scheme == .dark ? Color(red: 0.045, green: 0.085, blue: 0.08) : .porcelain)
-                TimelineView(.animation(minimumInterval: 1 / 24, paused: reduced || !active)) { time in
-                    let phase = reduced ? 0 : time.date.timeIntervalSinceReferenceDate / 18
-                    Ellipse()
-                        .fill(Color.celadon.opacity(scheme == .dark ? 0.10 : 0.13))
-                        .frame(width: geometry.size.width * 1.3, height: geometry.size.height * 0.7)
-                        .rotationEffect(.degrees(sin(phase) * 12 - 24))
-                        .position(x: geometry.size.width * 0.05, y: geometry.size.height * 0.88)
-                    Ellipse()
-                        .fill(Color.plateFat.opacity(scheme == .dark ? 0.07 : 0.055))
-                        .frame(width: geometry.size.width, height: geometry.size.height * 0.55)
-                        .rotationEffect(.degrees(cos(phase) * 10 + 28))
-                        .position(x: geometry.size.width * 0.97, y: geometry.size.height * 0.28)
-                }
-            }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+        TimelineView(.animation(minimumInterval: 1 / 24, paused: reduced || !active)) { time in
+            let phase = reduced ? 0 : time.date.timeIntervalSinceReferenceDate / 22
+            let colors: [Color] = scheme == .dark
+                ? [Color(red: 0.16, green: 0.10, blue: 0.19), Color(red: 0.14, green: 0.10, blue: 0.24), Color(red: 0.10, green: 0.12, blue: 0.21),
+                   Color(red: 0.18, green: 0.11, blue: 0.25), Color(red: 0.10, green: 0.09, blue: 0.18), Color(red: 0.06, green: 0.20, blue: 0.19),
+                   Color(red: 0.14, green: 0.10, blue: 0.24), Color(red: 0.09, green: 0.09, blue: 0.14), Color(red: 0.23, green: 0.14, blue: 0.12)]
+                : [Color(red: 1, green: 0.88, blue: 0.80), Color(red: 1, green: 0.94, blue: 0.99), Color(red: 0.88, green: 0.87, blue: 1),
+                   Color(red: 0.95, green: 0.85, blue: 1), Color(red: 0.96, green: 0.93, blue: 1), Color(red: 0.78, green: 0.97, blue: 0.90),
+                   Color(red: 0.87, green: 0.85, blue: 1), Color(red: 1, green: 0.99, blue: 0.95), Color(red: 1, green: 0.87, blue: 0.77)]
+            MeshGradient(width: 3, height: 3, points: [
+                [0, 0], [0.5, 0], [1, 0],
+                [0, 0.5], [Float(0.5 + sin(phase) * 0.09), Float(0.5 + cos(phase) * 0.08)], [1, 0.5],
+                [0, 1], [0.5, 1], [1, 1]
+            ], colors: colors)
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }
 }
@@ -94,12 +92,11 @@ struct PlateBackground: View {
 struct PlateMark: View {
     var size: CGFloat = 44
     var body: some View {
-        ZStack {
-            Circle().fill(RadialGradient(colors: [Color.glazeRim, Color.glazeCharcoal], center: .center, startRadius: 0, endRadius: size / 2))
-            Circle().stroke(Color.porcelain.opacity(0.25), lineWidth: 1).padding(size * 0.14)
-            Circle().trim(from: 0, to: 0.62).stroke(Color.saffron, style: StrokeStyle(lineWidth: size * 0.11, lineCap: .round)).rotationEffect(.degrees(-90)).padding(size * 0.25)
-            Circle().stroke(AngularGradient(colors: [.clear, Color.porcelain.opacity(0.6), .clear], center: .center, startAngle: .degrees(200), endAngle: .degrees(290)), lineWidth: 1.2)
-        }.frame(width: size, height: size).shadow(color: .black.opacity(0.5), radius: size * 0.15, y: size * 0.08).accessibilityHidden(true)
+        Circle()
+            .stroke(AngularGradient(colors: [.plateAccent, .bubble, .plateCarb, .celadon, .plateAccent], center: .center), lineWidth: size * 0.18)
+            .padding(size * 0.13)
+            .overlay(alignment: .top) { Circle().fill(Color.primary.opacity(0.75)).frame(width: size * 0.13, height: size * 0.13).padding(.top, size * 0.08) }
+            .frame(width: size, height: size).accessibilityHidden(true)
     }
 }
 struct MacroRing: View {
@@ -127,14 +124,11 @@ struct CaptureButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) { Image(systemName: "camera.fill"); Text("Log a meal").fontWeight(.semibold) }
-                .font(.system(.subheadline, design: .rounded)).foregroundStyle(Color.glazeCharcoal)
+            Label("Log a meal", systemImage: "camera.fill")
+                .font(.system(.subheadline, design: .rounded, weight: .semibold)).foregroundStyle(.white)
                 .padding(.horizontal, 24).padding(.vertical, 16)
-                .background(Capsule().fill(LinearGradient(colors: [Color.porcelain, Color(red: 0.86, green: 0.81, blue: 0.73)], startPoint: .top, endPoint: .bottom)))
-                .overlay(Capsule().stroke(Color.saffron, lineWidth: 1.5).padding(-4))
-                .shadow(color: Color.saffron.opacity(0.35), radius: 16, y: 6)
-        }.buttonStyle(PlatePress())
-            .accessibilityHint("Take a photo, read a label, or enter food manually")
+                .background(Color.plateAccent.gradient, in: .capsule)
+        }.buttonStyle(PlatePress()).accessibilityHint("Take a photo, read a label, or enter food manually")
     }
 }
 struct FoodPhoto: View {
@@ -158,7 +152,12 @@ func platformImage(_ data: Data) -> Image? {
 }
 struct SectionEyebrow: View {
     let text: String
-    var body: some View { Text(text.uppercased()).font(.system(size: 10.5, weight: .bold, design: .rounded)).tracking(1.6).foregroundStyle(Color.secondary) }
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(Color.plateAccent).frame(width: 5, height: 5)
+            Text(text.uppercased()).font(.system(size: 10, weight: .semibold, design: .rounded)).tracking(1.8).foregroundStyle(.secondary)
+        }
+    }
 }
 
 struct PlatePress: ButtonStyle {
@@ -221,21 +220,30 @@ struct PlateSegmentedControl: View {
     @Namespace private var highlight
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        HStack(spacing: 2) {
+        ViewThatFits(in: .horizontal) {
+            choices
+            ScrollView(.horizontal, showsIndicators: false) { choices }
+        }.sensoryFeedback(.selection, trigger: selection)
+    }
+    private var choices: some View {
+        HStack(spacing: 8) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, title in
-                Button { withAnimation(reduced ? nil : .spring(response: 0.38, dampingFraction: 0.78)) { selection = index } } label: {
-                    VStack(spacing: 7) {
-                        Text(title).font(.system(.subheadline, design: .rounded, weight: selection == index ? .bold : .regular))
-                            .foregroundStyle(selection == index ? Color.primary : Color.secondary)
-                        ZStack {
-                            Capsule().fill(Color.clear).frame(height: 2.5)
-                            if selection == index { Capsule().fill(Color.saffron).frame(height: 2.5).shadow(color: Color.saffron.opacity(0.7), radius: 5).matchedGeometryEffect(id: "segment", in: highlight) }
+                Button {
+                    withAnimation(reduced ? nil : .spring(response: 0.38, dampingFraction: 0.8)) { selection = index }
+                } label: {
+                    Text(title).font(.system(.caption, design: .rounded, weight: .semibold))
+                        .fixedSize().padding(.horizontal, 16).frame(minHeight: 44)
+                        .foregroundStyle(selection == index ? .white : Color.primary)
+                        .background {
+                            if selection == index {
+                                Capsule().fill(Color.plateAccent.gradient).matchedGeometryEffect(id: "segment", in: highlight)
+                            } else {
+                                Capsule().fill(.thinMaterial).overlay(Capsule().stroke(.white.opacity(0.65), lineWidth: 1))
+                            }
                         }
-                    }.frame(maxWidth: .infinity).padding(.top, 8).contentShape(Rectangle())
                 }.buttonStyle(PlatePress()).accessibilityAddTraits(selection == index ? .isSelected : [])
             }
-        }.overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.10)).frame(height: 1) }
-            .sensoryFeedback(.selection, trigger: selection)
+        }
     }
 }
 struct PlatePageTitle: View {
@@ -256,133 +264,55 @@ struct PlateDial: View {
     let meals: [Meal]
     let target: Double
     let tint: Color
+    var macroTargets: Nutrients = .zero
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduced
-    @State private var reach: Double = 0
     @State private var showRemaining = false
-    @State private var tilt = CGSize.zero
-    @State private var gleam = false
-    private let side: CGFloat = 300
-    private let bandWidth: CGFloat = 44
-    private struct Slice: Identifiable { let id: String; let start: Double; let end: Double; let color: Color }
-    private var eaten: Double { meals.reduce(0) { $0 + $1.total.calories } }
-    private var slices: [Slice] {
-        var cursor = 0.0
-        var result: [Slice] = []
-        let scale = 1 / max(1, target)
-        for meal in meals.sorted(by: { $0.timestamp < $1.timestamp }) {
-            let total = meal.total
-            let span = total.calories * scale
-            guard span > 0 else { continue }
-            let parts: [(key: String, kcal: Double, color: Color)] = [("p", total.protein * 4, .celadon), ("c", total.carbs * 4, .terracotta), ("f", total.fat * 9, .plateFat)]
-            let sum = parts.reduce(0) { $0 + $1.kcal }
-            let gap = min(0.006, span * 0.2)
-            var start = cursor
-            if sum <= 0 {
-                result.append(Slice(id: meal.id, start: start, end: start + span - gap, color: Color.porcelain.opacity(0.6)))
-            } else {
-                for part in parts where part.kcal > 0 {
-                    let width = (span - gap) * part.kcal / sum
-                    result.append(Slice(id: meal.id + part.key, start: start, end: start + width, color: part.color))
-                    start += width
-                }
-            }
-            cursor += span
-        }
-        return result
-    }
-    private func dayFraction(_ date: Date) -> Double {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
-        return (Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60) / 24
-    }
-    private func dominant(_ meal: Meal) -> Color {
-        let t = meal.total
-        let p = t.protein * 4, c = t.carbs * 4, f = t.fat * 9
-        return p >= c && p >= f ? .celadon : c >= f ? .terracotta : .plateFat
-    }
+    private var total: Nutrients { meals.reduce(.zero) { $0 + $1.total } }
     var body: some View {
-        Button { withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.7)) { showRemaining.toggle() } } label: {
-            ZStack { plate; rim; band; well }
-                .frame(width: side, height: side)
-                .rotation3DEffect(.degrees(reduced ? 0 : Double(tilt.width / 9)), axis: (x: 0, y: 1, z: 0))
-                .rotation3DEffect(.degrees(reduced ? 0 : Double(-tilt.height / 9)), axis: (x: 1, y: 0, z: 0))
-        }.buttonStyle(PlatePress())
-            .simultaneousGesture(DragGesture(minimumDistance: 12).onChanged { tilt = CGSize(width: max(-70, min(70, $0.translation.width)), height: max(-70, min(70, $0.translation.height))) }.onEnded { _ in withAnimation(reduced ? nil : .spring(response: 0.6, dampingFraction: 0.5)) { tilt = .zero } })
-            .onAppear {
-                guard !reduced else { reach = eaten / max(1, target); return }
-                withAnimation(.spring(response: 1.8, dampingFraction: 0.9).delay(0.25)) { reach = eaten / max(1, target) }
-                withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) { gleam = true }
-            }
-            .onChange(of: eaten) { _, newValue in withAnimation(reduced ? nil : .spring(response: 1.3, dampingFraction: 0.85)) { reach = newValue / max(1, target) } }
-            .onChange(of: target) { _, newValue in withAnimation(reduced ? nil : .spring(response: 1, dampingFraction: 0.85)) { reach = eaten / max(1, newValue) } }
-            .accessibilityLabel("\(Int(eaten)) of \(Int(target)) calories across \(meals.count) \(meals.count == 1 ? "meal" : "meals"). Tap to switch between eaten and remaining.")
-    }
-    private var plate: some View {
-        ZStack {
-            Circle().fill(Color.celadon.opacity(0.18)).blur(radius: 18).padding(10)
-            Circle().fill(RadialGradient(colors: [Color(red: 0.12, green: 0.39, blue: 0.33), Color(red: 0.09, green: 0.27, blue: 0.24), Color(red: 0.06, green: 0.19, blue: 0.18)], center: UnitPoint(x: 0.42, y: 0.33), startRadius: 8, endRadius: side * 0.56))
-            Circle().stroke(LinearGradient(colors: [Color.porcelain.opacity(0.3), .clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5)
-            Circle().stroke(Color.black.opacity(0.4), lineWidth: 1.5).padding(side * 0.115)
-            Circle().stroke(Color.porcelain.opacity(0.08), lineWidth: 1).padding(side * 0.12)
-            // A glint that travels slowly round the glaze.
-            Circle().stroke(AngularGradient(colors: [.clear, Color.porcelain.opacity(0.5), .clear], center: .center, startAngle: .degrees(0), endAngle: .degrees(70)), lineWidth: 2.5).padding(2)
-                .rotationEffect(.degrees(gleam ? 360 : 0))
-        }
-    }
-    private var rim: some View {
-        let radius = side * 0.44
-        let now = dayFraction(.now)
-        return ZStack {
-            ForEach(0..<24, id: \.self) { hour in
-                Capsule().fill(Color.porcelain.opacity(hour % 6 == 0 ? 0.5 : 0.16))
-                    .frame(width: hour % 6 == 0 ? 2 : 1.2, height: hour % 6 == 0 ? 10 : 6)
-                    .offset(y: -radius).rotationEffect(.degrees(Double(hour) / 24 * 360))
-            }
-            ForEach(meals) { meal in
-                Circle().fill(dominant(meal)).frame(width: 7, height: 7).shadow(color: dominant(meal).opacity(0.9), radius: 4)
-                    .offset(y: -radius).rotationEffect(.degrees(dayFraction(meal.timestamp) * 360))
-                    .transition(.scale.combined(with: .opacity))
-            }
-            Capsule().fill(Color.saffron).frame(width: 3, height: 15).shadow(color: Color.saffron, radius: 5)
-                .offset(y: -radius).rotationEffect(.degrees(now * 360))
-        }
-    }
-    private var band: some View {
-        let diameter = side * 0.547
-        let fill = min(1, reach)
-        return ZStack {
-            Circle().stroke(Color.black.opacity(0.32), lineWidth: bandWidth).frame(width: diameter, height: diameter)
-            Circle().stroke(Color.porcelain.opacity(0.035), lineWidth: bandWidth).frame(width: diameter, height: diameter)
-            ForEach(slices) { slice in
-                let from = min(slice.start, 1)
-                Circle().trim(from: from, to: max(from, min(slice.end, reach, 1)))
-                    .stroke(slice.color.gradient, style: StrokeStyle(lineWidth: bandWidth, lineCap: .butt))
-                    .rotationEffect(.degrees(-90)).frame(width: diameter, height: diameter)
-            }
-            // The glaze: a soft highlight across the food.
-            Circle().trim(from: 0, to: fill)
-                .stroke(LinearGradient(colors: [Color.white.opacity(0.28), .clear, Color.black.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: bandWidth, lineCap: .butt))
-                .rotationEffect(.degrees(-90)).frame(width: diameter, height: diameter).blendMode(.overlay)
-            // Past the target, food spills onto the rim.
-            Circle().trim(from: 0, to: min(1, max(0, reach - 1)))
-                .stroke(Color.glazeRed, style: StrokeStyle(lineWidth: 4, lineCap: .round)).shadow(color: Color.glazeRed, radius: 6)
-                .rotationEffect(.degrees(-90)).frame(width: side * 0.73, height: side * 0.73)
-        }
-    }
-    private var well: some View {
-        let value = reach * max(1, target)
-        let remaining = target - value
-        return ZStack {
-            Circle().fill(RadialGradient(colors: [Color.glazeCharcoal, Color.glazeSlate], center: .center, startRadius: 0, endRadius: 60)).frame(width: 118, height: 118)
-                .overlay(Circle().stroke(Color.black.opacity(0.55), lineWidth: 3).blur(radius: 2).offset(y: 2).mask(Circle()))
-                .overlay(Circle().stroke(Color.porcelain.opacity(0.09), lineWidth: 1))
-            VStack(spacing: 2) {
-                Text(Int((showRemaining ? abs(remaining) : value).rounded()), format: .number)
-                    .font(.system(size: 34, weight: .bold, design: .rounded)).foregroundStyle(Color.porcelain)
-                    .contentTransition(.numericText(value: value)).minimumScaleFactor(0.6).lineLimit(1)
-                Text(showRemaining ? (remaining < 0 ? "KCAL OVER" : "KCAL LEFT") : "KCAL ON PLATE").font(.system(size: 7.5, weight: .bold, design: .monospaced)).tracking(1.4).foregroundStyle(tint)
-                Text("of \(Int(target))").font(.system(size: 10, design: .rounded)).foregroundStyle(Color.porcelain.opacity(0.5))
-            }.frame(width: 102)
-        }
+        Button {
+            withAnimation(reduced ? nil : .spring(response: 0.5, dampingFraction: 0.8)) { showRemaining.toggle() }
+        } label: {
+            GeometryReader { geometry in
+                let size = geometry.size.width
+                let line = size * 0.065
+                let progress = min(1, max(0, total.calories / max(1, target)))
+                ZStack {
+                    Circle().fill(.ultraThinMaterial)
+                        .overlay(Circle().stroke(.white.opacity(scheme == .dark ? 0.15 : 0.85), lineWidth: 1.5))
+                        .shadow(color: Color.plateAccent.opacity(0.14), radius: 20, y: 10)
+                    Circle().stroke(Color.plateAccent.opacity(0.07), lineWidth: line).padding(line)
+                    Circle().trim(from: 0, to: progress)
+                        .stroke(AngularGradient(colors: [.plateAccent, .bubble], center: .center, startAngle: .degrees(0), endAngle: .degrees(360 * max(0.01, progress))), style: StrokeStyle(lineWidth: line, lineCap: .round))
+                        .rotationEffect(.degrees(-90)).padding(line)
+                    ForEach(0..<3) { index in
+                        let values = [total.protein, total.carbs, total.fat]
+                        let targets = [macroTargets.protein, macroTargets.carbs, macroTargets.fat]
+                        let colors: [Color] = [.plateProtein, .plateCarb, .plateFat]
+                        let start = Double(index) / 3 + 0.018
+                        let span = 1.0 / 3 - 0.036
+                        Circle().trim(from: start, to: start + span * min(1, max(0, values[index] / max(1, targets[index]))))
+                            .stroke(colors[index], style: StrokeStyle(lineWidth: size * 0.021, lineCap: .round))
+                            .rotationEffect(.degrees(-90)).padding(size * 0.18)
+                    }
+                    VStack(spacing: 6) {
+                        Text(showRemaining ? Int(max(0, target - total.calories).rounded()) : Int(total.calories.rounded()), format: .number)
+                            .font(.system(size: size * 0.19, weight: .bold, design: .rounded)).tracking(-2)
+                            .contentTransition(.numericText())
+                            .foregroundStyle(.primary)
+                        Text(showRemaining ? "kcal left" : "kcal eaten")
+                            .font(.system(size: size * 0.045, weight: .semibold, design: .rounded)).foregroundStyle(Color.plateAccent)
+                        Text("of \(Int(target).formatted())")
+                            .font(.system(size: size * 0.037, design: .rounded)).foregroundStyle(.secondary)
+                    }
+                    Circle().fill(.white).frame(width: size * 0.026, height: size * 0.026)
+                        .offset(y: -size / 2 + line)
+                        .rotationEffect(.degrees(progress * 360))
+                }
+            }.aspectRatio(1, contentMode: .fit)
+        }.buttonStyle(PlatePress()).frame(maxWidth: 320)
+            .animation(reduced ? nil : .spring(response: 0.9, dampingFraction: 0.85), value: total)
+            .accessibilityLabel("\(Int(total.calories)) of \(Int(target)) calories. Tap to switch eaten and left.")
     }
 }
 struct NutrientTile: View {
@@ -392,27 +322,34 @@ struct NutrientTile: View {
     let target: Double
     let tint: Color
     @State private var expanded = false
-    @State private var grown = false
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
-        Button { withAnimation(reduced ? nil : .spring(response: 0.4)) { expanded.toggle() } } label: {
+        Button {
+            withAnimation(reduced ? nil : .spring(response: 0.4)) { expanded.toggle() }
+        } label: {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: symbol).font(.system(size: 14, weight: .bold)).foregroundStyle(tint).frame(width: 32, height: 32).background(tint.opacity(0.13), in: .circle)
-                    Spacer(minLength: 0)
-                    Image(systemName: expanded ? "minus" : "plus").font(.caption2.bold()).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Circle().fill(tint).frame(width: 7, height: 7)
+                    Text(name).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                HStack(alignment: .firstTextBaseline, spacing: 2) { Text(Int(value), format: .number).font(.system(size: 27, weight: .bold, design: .rounded)).contentTransition(.numericText()); Text("g").font(.caption).foregroundStyle(.secondary) }
-                GeometryReader { geo in
-                    Capsule().fill(tint.opacity(0.13))
-                        .overlay(alignment: .leading) { Capsule().fill(tint.gradient).frame(width: geo.size.width * (grown || reduced ? min(1,max(0,value/max(1,target))) : 0)).shadow(color: tint.opacity(0.6), radius: 4) }
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(value, format: .number.precision(.fractionLength(0)))
+                        .font(.system(size: 29, weight: .bold, design: .rounded)).contentTransition(.numericText())
+                    Text("g").font(.caption).foregroundStyle(.secondary)
+                }
+                GeometryReader { geometry in
+                    Capsule().fill(tint.opacity(0.12))
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(tint).frame(width: geometry.size.width * min(1, max(0, value / max(1, target))))
+                        }
                 }.frame(height: 5)
-                    .onAppear { withAnimation(reduced ? nil : .spring(response: 1.1, dampingFraction: 0.8).delay(0.35)) { grown = true } }
-                    .animation(reduced ? nil : .spring(response: 0.8, dampingFraction: 0.75), value: value)
-                if expanded { Text("\(Int(max(0,target-value))) g left\nTarget \(Int(target)) g").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).transition(.opacity.combined(with: .move(edge: .top))) }
-            }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(LinearGradient(colors: [Color.glazeRim, Color.glazeSlate], startPoint: .top, endPoint: .bottom), in: .rect(cornerRadius: 22, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(tint.opacity(0.28))).overlay(alignment: .top) { Capsule().fill(tint).frame(width: 26, height: 2.5).padding(.top, 1) }
-        }.buttonStyle(PlatePress()).accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams").accessibilityHint("Show remaining grams")
+                Text(expanded ? "\(Int(max(0, target - value))) g left" : "of \(Int(target)) g")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }.padding(16).frame(maxWidth: .infinity, alignment: .leading).plateCard()
+        }.buttonStyle(PlatePress()).foregroundStyle(.primary)
+            .animation(reduced ? nil : .spring(response: 0.7), value: value)
+            .accessibilityLabel("\(name), \(Int(value)) of \(Int(target)) grams")
+            .accessibilityHint("Show remaining grams")
     }
 }
 
