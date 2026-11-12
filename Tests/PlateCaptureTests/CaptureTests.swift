@@ -94,3 +94,43 @@ final class CaptureTests: XCTestCase {
     }
 
 }
+
+final class HealthExportLedgerTests: XCTestCase {
+    func testPendingExportReusesVersionAfterRestart() throws {
+        var ledger = HealthExportLedger()
+        let entry = ledger.prepare(mealID: "breakfast", fingerprint: "first", now: Date(timeIntervalSince1970: 100))
+        let data = try JSONEncoder().encode(ledger)
+        var restored = try JSONDecoder().decode(HealthExportLedger.self, from: data)
+        let retry = restored.prepare(mealID: "breakfast", fingerprint: "first", now: Date(timeIntervalSince1970: 200))
+        XCTAssertEqual(entry, retry)
+        XCTAssertFalse(retry.completed)
+    }
+
+    func testEditedMealAdvancesVersionEvenWhenClockMovesBackwards() {
+        var ledger = HealthExportLedger()
+        let original = ledger.prepare(mealID: "breakfast", fingerprint: "original", now: Date(timeIntervalSince1970: 200))
+        ledger.complete(mealID: "breakfast", fingerprint: "original")
+        let edit = ledger.prepare(mealID: "breakfast", fingerprint: "edited", now: Date(timeIntervalSince1970: 100))
+        XCTAssertGreaterThan(edit.version, original.version)
+        XCTAssertFalse(edit.completed)
+    }
+
+    func testStaleCompletionCannotAcknowledgeNewerEdit() {
+        var ledger = HealthExportLedger()
+        _ = ledger.prepare(mealID: "breakfast", fingerprint: "original", now: .now)
+        _ = ledger.prepare(mealID: "breakfast", fingerprint: "edited", now: .now)
+        ledger.complete(mealID: "breakfast", fingerprint: "original")
+        XCTAssertFalse(ledger.entries["breakfast"]?.completed ?? true)
+        ledger.complete(mealID: "breakfast", fingerprint: "edited")
+        XCTAssertTrue(ledger.entries["breakfast"]?.completed ?? false)
+    }
+
+    func testDeletingOneMealPreservesOtherExportReceipts() {
+        var ledger = HealthExportLedger()
+        _ = ledger.prepare(mealID: "breakfast", fingerprint: "first", now: .now)
+        _ = ledger.prepare(mealID: "lunch", fingerprint: "second", now: .now)
+        ledger.forget(mealID: "breakfast")
+        XCTAssertNil(ledger.entries["breakfast"])
+        XCTAssertNotNil(ledger.entries["lunch"])
+    }
+}

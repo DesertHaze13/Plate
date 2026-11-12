@@ -28,8 +28,73 @@ import PlateCore
     var energyDays: [EnergyDay] = []
     @ObservationIgnored private var refreshingHealth = false
     var healthEnabled: Bool { UserDefaults.standard.bool(forKey: "healthEnabled") }
+    private(set) var nutritionSyncMessage: String?
+    private(set) var nutritionSyncing = false
+    @ObservationIgnored private var nutritionSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var nutritionSyncRequested = false
+
+    /// A single writer handles live edits, cloud arrivals and retries in order.
+    func scheduleNutritionSync(refresh: Bool = false) {
+        #if os(iOS)
+        guard healthEnabled else { return }
+        if refresh { health.refreshNutritionCache() }
+        nutritionSyncRequested = true
+        guard nutritionSyncTask == nil else { return }
+        nutritionSyncTask = Task {
+            nutritionSyncing = true
+            defer { nutritionSyncing = false; nutritionSyncTask = nil }
+            while nutritionSyncRequested && healthEnabled {
+                nutritionSyncRequested = false
+                guard health.canWriteNutrition else {
+                    nutritionSyncMessage = HealthNutritionError.permissionDenied.localizedDescription
+                    break
+                }
+                nutritionSyncMessage = "Syncing meal nutrition…"
+                var failure: (any Error)?
+                do { try await health.flushDeletions() }
+                catch { failure = error }
+                let account = store.accountID
+                let meals = store.meals
+                var sent = 0
+                for meal in meals {
+                    guard healthEnabled, account == store.accountID else { break }
+                    do {
+                        try await health.write(meal)
+                        sent += 1
+                    } catch { failure = error }
+                }
+                guard healthEnabled, account == store.accountID else { continue }
+                healthMealsSynced = sent
+                if let failure {
+                    nutritionSyncMessage = "Synced \(sent) of \(meals.count) meals. Plate will retry when you open it. \(failure.localizedDescription)"
+                } else if meals.isEmpty {
+                    nutritionSyncMessage = "Ready to sync your first meal."
+                } else {
+                    nutritionSyncMessage = "Synced \(sent) meals to Apple Health."
+                }
+                let missing = health.unsharedNutritionNames
+                if !missing.isEmpty {
+                    nutritionSyncMessage = (nutritionSyncMessage ?? "") + " Allow these types in Health to include them: " + missing.joined(separator: ", ") + "."
+                }
+            }
+        }
+        #endif
+    }
+
+    private(set) var healthMealsSynced = 0
+
+    func syncMealsToHealth(refresh: Bool = false) async {
+        scheduleNutritionSync(refresh: refresh)
+        await nutritionSyncTask?.value
+    }
+
     init() {
         let store = MealStore(); self.store = store; self.sync = FirebaseSync(store: store)
+        self.sync.onConfirmedMealRemovals = { [weak self] ids in
+            guard let self else { return }
+            for id in ids { self.health.queueDeletion(mealID: id) }
+            self.scheduleNutritionSync()
+        }
     }
     func finishOnboarding(profile: Profile, targets: Targets) {
         store.account.profile = profile; store.targets = targets; store.account.onboarded = true
@@ -54,7 +119,7 @@ import PlateCore
         sync.save(meal)
         Task { await PhotoOutbox.shared.flush(sync: sync) }
         if saveToLibrary { for item in meal.items { store.saveFood(item, barcode: barcode) }; sync.saveAccount() }
-        await writeToHealth(meal)
+        scheduleNutritionSync()
         await SummaryNotifications.schedule(store: store)
     }
     /// Saves an edited meal and replaces its copy in Apple Health.
@@ -62,68 +127,17 @@ import PlateCore
         guard meal.isValid else { notice = "Check portions and nutrition before saving the meal."; return }
         var meal = meal; meal.updatedAt = .now
         sync.save(meal)
-        Task { await writeToHealth(meal) }
+        scheduleNutritionSync()
     }
     func deleteMeal(_ meal: Meal) {
+        health.queueDeletion(mealID: meal.id)
         sync.remove(meal)
-        if healthEnabled { Task { await health.delete(mealID: meal.id); setLedger(meal.id, nil) } }
-    }
-    private func writeToHealth(_ meal: Meal) async {
-        guard healthEnabled else { return }
-        do { try await health.write(meal); setLedger(meal.id, Self.healthFingerprint(meal)) }
-        catch { notice = "Meal saved. Health could not be updated: \(error.localizedDescription)" }
-    }
-
-    // MARK: Apple Health ledger
-
-    /// What this device last wrote to Apple Health, by meal ID, for the signed-in account.
-    private var ledgerKey: String { "healthLedger-\(store.accountID ?? "local")" }
-    private var healthLedger: [String: String] { UserDefaults.standard.dictionary(forKey: ledgerKey) as? [String: String] ?? [:] }
-    private func setLedger(_ mealID: String, _ fingerprint: String?) {
-        var ledger = healthLedger; ledger[mealID] = fingerprint
-        UserDefaults.standard.set(ledger, forKey: ledgerKey)
-    }
-    @ObservationIgnored private var syncingHealthMeals = false
-    @ObservationIgnored private var healthMealsChangedAgain = false
-    /// Meals written to Apple Health by the last full pass on this device.
-    var healthMealsSynced = 0
-    /// A stable summary of everything Plate writes to Health for a meal. A change means Health needs the new version.
-    static func healthFingerprint(_ meal: Meal) -> String {
-        var parts = [String(meal.timestamp.timeIntervalSince1970), meal.type.rawValue]
-        for item in meal.items {
-            let n = item.total
-            parts.append(([item.name] + [n.calories, n.protein, n.carbs, n.fat, n.fiber, n.sugar, n.caffeine].map { String($0) }).joined(separator: "|"))
-        }
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in parts.joined(separator: "\u{1F}").utf8 { hash ^= UInt64(byte); hash = hash &* 0x100000001b3 }
-        return String(hash, radix: 16)
-    }
-    /// Brings Apple Health in line with every logged meal: writes new and changed meals (including ones logged on other devices, by Siri or before Health was connected) and removes meals deleted elsewhere.
-    func syncMealsToHealth() async {
-        guard healthEnabled else { return }
-        if syncingHealthMeals { healthMealsChangedAgain = true; return }
-        syncingHealthMeals = true; defer { syncingHealthMeals = false }
-        repeat {
-            healthMealsChangedAgain = false
-            let meals = store.meals
-            var failures = 0
-            for meal in meals where meal.isValid && healthLedger[meal.id] != Self.healthFingerprint(meal) {
-                do { try await health.write(meal); setLedger(meal.id, Self.healthFingerprint(meal)) }
-                catch { failures += 1; if failures >= 3 { break } }
-            }
-            // A sign-out or a half-loaded list must never wipe Health, so only a handful of vanished meals are removed per pass.
-            let current = Set(store.meals.map(\.id))
-            let gone = healthLedger.keys.filter { !current.contains($0) }
-            if !current.isEmpty, gone.count <= 10 {
-                for id in gone { await health.delete(mealID: id); setLedger(id, nil) }
-            }
-            let ledger = healthLedger
-            healthMealsSynced = store.meals.filter { ledger[$0.id] == Self.healthFingerprint($0) }.count
-        } while healthMealsChangedAgain
+        scheduleNutritionSync()
     }
     /// Turns on Apple Health and pulls in everything Plate can use.
     func connectHealth() async throws {
         try await health.authorize()
+        guard health.canWriteNutrition else { throw HealthNutritionError.permissionDenied }
         UserDefaults.standard.set(true, forKey: "healthEnabled")
         await refreshHealth()
         await syncMealsToHealth()
@@ -132,6 +146,7 @@ import PlateCore
     func refreshHealth() async {
         guard healthEnabled, !refreshingHealth else { return }
         refreshingHealth = true; defer { refreshingHealth = false }
+        scheduleNutritionSync(refresh: true)
         let body = await health.profile()
         healthProfile = body
         apply(body)
@@ -183,7 +198,7 @@ import PlateCore
     func logFood(_ food: SavedFood) {
         let meal = Meal(items: [food.item], source: food.item.source)
         sync.save(meal)
-        Task { await writeToHealth(meal) }
+        scheduleNutritionSync()
     }
     func handleURL(_ url: URL) {
         if sync.handleURL(url) { return }

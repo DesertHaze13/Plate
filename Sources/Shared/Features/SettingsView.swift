@@ -166,15 +166,18 @@ struct SettingsView: View {
                     Text("Health controls its own categories: coffee is saved by name as food, with its dietary caffeine. Missing or unshared Health values remain editable here. Blood pressure is for reference only.").font(.caption).foregroundStyle(.secondary)
                     if healthEnabled, let reading = model.healthProfile, !reading.isEmpty { HealthBodyGrid(reading: reading, metric: settings.metric).transition(.opacity.combined(with: .scale(scale: 0.96))) }
                     if healthEnabled {
-                        Label("Auto-sync on · \(model.healthMealsSynced) of \(model.store.meals.count) meals in Health", systemImage: "checkmark.icloud.fill")
-                            .font(.caption.weight(.semibold)).foregroundStyle(Color.plateAccent)
-                            .contentTransition(.numericText()).animation(.spring(response: 0.5), value: model.healthMealsSynced)
+                        if let message = model.nutritionSyncMessage {
+                            HStack(alignment: .top, spacing: 10) {
+                                if model.nutritionSyncing { ProgressView().controlSize(.small) }
+                                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                         HStack {
                             Button("Refresh", systemImage: "arrow.triangle.2.circlepath") { Task { await model.refreshHealth(); model.notice = "Updated from Apple Health." } }
                             Spacer()
                             Button("Sync all meals now", systemImage: "heart.text.square") {
-                                Task { await model.syncMealsToHealth(); model.notice = "\(model.healthMealsSynced) of \(model.store.meals.count) meals are in Apple Health." }
-                            }
+                                Task { await model.syncMealsToHealth(refresh: true) }
+                            }.disabled(model.nutritionSyncing)
                         }.font(.subheadline).buttonStyle(.glass)
                     }
                 }.padding(22).plateCard().animation(reduced ? nil : .spring(response: 0.5), value: model.healthProfile)

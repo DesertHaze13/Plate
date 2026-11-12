@@ -48,7 +48,7 @@ struct FoundationView: View {
         .onChange(of: model.connectivity.online) { _, online in if online { Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
         .onChange(of: model.sync.userID) { _, uid in if uid != nil { Task { await PhotoOutbox.shared.flush(sync: model.sync) } } }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.store.refreshClock(); model.store.publishWidget(); checkCaptureRequest(); Task { await SummaryNotifications.schedule(store: model.store); await PhotoOutbox.shared.flush(sync: model.sync); await model.refreshHealth() } } }
-        .onChange(of: model.store.meals) { _, _ in Task { await model.syncMealsToHealth() } }
+        .onChange(of: model.store.meals, initial: true) { _, _ in Task { await model.syncMealsToHealth() } }
         .onOpenURL { model.handleURL($0) }
         .onReceive(NotificationCenter.default.publisher(for: .plateCapture)) { _ in model.showCapture = true }
         .dropDestination(for: URL.self) { urls, _ in
