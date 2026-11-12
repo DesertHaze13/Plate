@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import PlateCore
 #if os(iOS)
 @preconcurrency import HealthKit
@@ -33,6 +34,39 @@ struct EnergyDay: Identifiable, Equatable, Sendable {
     var burned: Double { basal + active }
 }
 
+/// Tracks HealthKit versions across retries and restarts without storing nutrition values.
+struct HealthExportLedger: Codable, Equatable {
+    struct Entry: Codable, Equatable {
+        let fingerprint: String
+        let version: Int
+        var completed: Bool
+    }
+    private(set) var entries: [String: Entry] = [:]
+
+    mutating func prepare(mealID: String, fingerprint: String, now: Date) -> Entry {
+        if let entry = entries[mealID], entry.fingerprint == fingerprint { return entry }
+        let previous = entries[mealID]?.version ?? 0
+        let version = max(previous + 1, Int(now.timeIntervalSince1970 * 1000))
+        let entry = Entry(fingerprint: fingerprint, version: version, completed: false)
+        entries[mealID] = entry
+        return entry
+    }
+
+    mutating func complete(mealID: String, fingerprint: String) {
+        guard entries[mealID]?.fingerprint == fingerprint else { return }
+        entries[mealID]?.completed = true
+    }
+
+    mutating func forget(mealID: String) { entries.removeValue(forKey: mealID) }
+}
+
+enum HealthNutritionError: LocalizedError {
+    case permissionDenied
+    var errorDescription: String? {
+        "Allow Plate to write Dietary Energy in Apple Health, then enable the other nutrition types you want to sync."
+    }
+}
+
 @MainActor final class HealthService {
     #if os(iOS)
     private let store = HKHealthStore()
@@ -58,41 +92,133 @@ struct EnergyDay: Identifiable, Equatable, Sendable {
 
     // MARK: Food → Health
 
-    /// Saves each food in the meal as a Health food entry (name, energy, macros, caffeine). Replaces any earlier copy of the meal.
+    private let revisionKey = "PlateNutritionRevision"
+    private let ledgerKey = "plateHealthExportLedgerV1"
+    private let deletionKey = "plateHealthPendingDeletionsV1"
+    private var completedThisSession: [String: String] = [:]
+    private var ledger: HealthExportLedger = {
+        guard let data = UserDefaults.standard.data(forKey: "plateHealthExportLedgerV1"),
+              let value = try? JSONDecoder().decode(HealthExportLedger.self, from: data) else { return HealthExportLedger() }
+        return value
+    }()
+
+    var canWriteNutrition: Bool {
+        HKHealthStore.isHealthDataAvailable() &&
+            store.authorizationStatus(for: HKQuantityType(.dietaryEnergyConsumed)) == .sharingAuthorized
+    }
+
+    var unsharedNutritionNames: [String] {
+        let names = ["Calories", "Protein", "Carbohydrates", "Fat", "Fiber", "Sugar", "Caffeine"]
+        return zip(nutrients, names).compactMap { nutrient, name in
+            store.authorizationStatus(for: HKQuantityType(nutrient.0)) == .sharingAuthorized ? nil : name
+        }
+    }
+
+    func refreshNutritionCache() { completedThisSession = [:] }
+
+    private struct FoodExport: Encodable {
+        let id: String
+        let name: String
+        let amounts: [Double]
+    }
+    private struct MealExport: Encodable {
+        let timestamp: Date
+        let type: String
+        let identifiers: [String]
+        let foods: [FoodExport]
+    }
+
+    /// Saves stable, versioned food records. A retry replaces the same samples.
+    /// The new records are saved before older records are removed.
     func write(_ meal: Meal) async throws {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
-        if !authorized { try await authorize() }
-        guard store.authorizationStatus(for: HKQuantityType(.dietaryEnergyConsumed)) == .sharingAuthorized else { throw CocoaError(.fileWriteNoPermission) }
-        await delete(mealID: meal.id)
-        guard let foodType = HKCorrelationType.correlationType(forIdentifier: .food) else { return }
-        var foods: [HKObject] = []
-        for item in meal.items {
-            let amounts = item.total
-            let metadata: [String: Any] = [HKMetadataKeyFoodType: item.name, mealKey: meal.id, "PlateMeal": meal.type.rawValue]
-            let samples: [HKSample] = nutrients.compactMap { identifier, key, unit -> HKSample? in
-                guard store.authorizationStatus(for: HKQuantityType(identifier)) == .sharingAuthorized else { return nil }
-                let value = amounts[keyPath: key]
-                guard value.isFinite, value > 0 || identifier == .dietaryEnergyConsumed else { return nil }
-                return HKQuantitySample(type: HKQuantityType(identifier), quantity: HKQuantity(unit: unit, doubleValue: value), start: meal.timestamp, end: meal.timestamp, metadata: metadata)
+        guard canWriteNutrition else { throw HealthNutritionError.permissionDenied }
+        guard meal.isValid, let foodType = HKCorrelationType.correlationType(forIdentifier: .food) else {
+            throw CocoaError(.validationMissingMandatoryProperty)
+        }
+        let writable = nutrients.filter { store.authorizationStatus(for: HKQuantityType($0.0)) == .sharingAuthorized }
+        let export = MealExport(timestamp: meal.timestamp, type: meal.type.rawValue,
+                                identifiers: writable.map { $0.0.rawValue },
+                                foods: meal.items.map { item in
+                                    FoodExport(id: item.id, name: item.name, amounts: writable.map { item.total[keyPath: $0.1] })
+                                })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let fingerprint = Data(SHA256.hash(data: try encoder.encode(export))).base64EncodedString()
+        guard completedThisSession[meal.id] != fingerprint else { return }
+        let entry = ledger.prepare(mealID: meal.id, fingerprint: fingerprint, now: .now)
+        if !entry.completed { try persistLedger() }
+
+        let foods = export.foods.map { item in
+            let identifier = "plate-food-\(meal.id)-\(item.id)"
+            let metadata: [String: Any] = [
+                HKMetadataKeyFoodType: item.name,
+                mealKey: meal.id,
+                "PlateMeal": meal.type.rawValue,
+                revisionKey: fingerprint,
+                HKMetadataKeySyncIdentifier: identifier,
+                HKMetadataKeySyncVersion: entry.version
+            ]
+            let samples: [HKSample] = zip(writable, item.amounts).map { nutrient, amount in
+                let (type, _, unit) = nutrient
+                var sampleMetadata = metadata
+                sampleMetadata[HKMetadataKeySyncIdentifier] = identifier + "-" + type.rawValue
+                return HKQuantitySample(type: HKQuantityType(type), quantity: HKQuantity(unit: unit, doubleValue: amount),
+                                        start: meal.timestamp, end: meal.timestamp, metadata: sampleMetadata)
             }
             var foodMetadata = metadata
             if CaffeineEstimate.isCoffee(item.name) { foodMetadata["PlateDrink"] = "coffee" }
-            foods.append(HKCorrelation(type: foodType, start: meal.timestamp, end: meal.timestamp, objects: Set(samples), metadata: foodMetadata))
+            return HKCorrelation(type: foodType, start: meal.timestamp, end: meal.timestamp,
+                                 objects: Set(samples), metadata: foodMetadata)
         }
-        if !foods.isEmpty { try await store.save(foods) }
+        try await store.save(foods)
+        try await removeNutrition(mealID: meal.id, keeping: fingerprint)
+        if !entry.completed {
+            ledger.complete(mealID: meal.id, fingerprint: fingerprint)
+            try persistLedger()
+        }
+        completedThisSession[meal.id] = fingerprint
     }
-    /// Removes everything Plate wrote for a meal, including entries from older app versions.
-    func delete(mealID: String) async {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
+
+    /// Persisted before a meal is removed so Health deletion can be retried after relaunch.
+    func queueDeletion(mealID: String) {
+        var pending = UserDefaults.standard.stringArray(forKey: deletionKey) ?? []
+        if !pending.contains(mealID) { pending.append(mealID) }
+        UserDefaults.standard.set(pending, forKey: deletionKey)
+    }
+
+    func flushDeletions() async throws {
+        for id in UserDefaults.standard.stringArray(forKey: deletionKey) ?? [] {
+            try await removeNutrition(mealID: id, keeping: nil)
+            ledger.forget(mealID: id)
+            try persistLedger()
+            completedThisSession.removeValue(forKey: id)
+            let pending = UserDefaults.standard.stringArray(forKey: deletionKey) ?? []
+            UserDefaults.standard.set(pending.filter { $0 != id }, forKey: deletionKey)
+        }
+    }
+
+    private func persistLedger() throws {
+        UserDefaults.standard.set(try JSONEncoder().encode(ledger), forKey: ledgerKey)
+    }
+
+    private func removeNutrition(mealID: String, keeping revision: String?) async throws {
         let current = HKQuery.predicateForObjects(withMetadataKey: mealKey, allowedValues: [mealID])
-        let legacy = HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeySyncIdentifier, allowedValues: nutrients.map { "plate-\(mealID)-\($0.0.rawValue)" })
-        let predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [current, legacy])
-        var types = nutrients.map { HKQuantityType($0.0) as HKObjectType }
-        if let food = HKCorrelationType.correlationType(forIdentifier: .food) { types.insert(food, at: 0) }
-        for type in types {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                store.deleteObjects(of: type, predicate: predicate) { _, _, _ in continuation.resume() }
-            }
+        let obsolete: NSPredicate
+        if let revision {
+            let keep = HKQuery.predicateForObjects(withMetadataKey: revisionKey, allowedValues: [revision])
+            obsolete = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                current, NSCompoundPredicate(notPredicateWithSubpredicate: keep)
+            ])
+        } else { obsolete = current }
+        if let food = HKCorrelationType.correlationType(forIdentifier: .food) {
+            _ = try await store.deleteObjects(of: food, predicate: obsolete)
+        }
+        for (identifier, _, _) in nutrients {
+            let type = HKQuantityType(identifier)
+            let legacy = HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeySyncIdentifier,
+                                                     allowedValues: ["plate-\(mealID)-\(identifier.rawValue)"])
+            let predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [obsolete, legacy])
+            _ = try await store.deleteObjects(of: type, predicate: predicate)
         }
     }
 
@@ -223,8 +349,12 @@ struct EnergyDay: Identifiable, Equatable, Sendable {
     }
     #else
     func authorize() async throws { throw CocoaError(.featureUnsupported) }
+    var canWriteNutrition: Bool { false }
+    var unsharedNutritionNames: [String] { [] }
+    func refreshNutritionCache() {}
     func write(_ meal: Meal) async throws {}
-    func delete(mealID: String) async {}
+    func queueDeletion(mealID: String) {}
+    func flushDeletions() async throws {}
     func profile() async -> HealthProfile { HealthProfile() }
     func weights() async throws -> [WeightEntry] { [] }
     func workouts(on day: Date = .now) async -> [HealthWorkout] { [] }

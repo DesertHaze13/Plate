@@ -32,6 +32,7 @@ struct FoundationView: View {
         .sheet(isPresented: $model.showOnboarding) { OnboardingView().environment(model).interactiveDismissDisabled() }
         .alert("Plate", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) { Button("OK") { model.notice = nil } } message: { Text(model.notice ?? "") }
         .task { await model.refreshHealth() }
+        .onChange(of: model.store.meals, initial: true) { _, _ in model.scheduleNutritionSync() }
         .task {
             model.showOnboarding = !model.store.account.onboarded
             while !Task.isCancelled {

@@ -166,18 +166,19 @@ struct SettingsView: View {
                     Text("Health controls its own categories: coffee is saved by name as food, with its dietary caffeine. Missing or unshared Health values remain editable here. Blood pressure is for reference only.").font(.caption).foregroundStyle(.secondary)
                     if healthEnabled, let reading = model.healthProfile, !reading.isEmpty { HealthBodyGrid(reading: reading, metric: settings.metric).transition(.opacity.combined(with: .scale(scale: 0.96))) }
                     if healthEnabled {
+                        if let message = model.nutritionSyncMessage {
+                            HStack(alignment: .top, spacing: 10) {
+                                if model.nutritionSyncing { ProgressView().controlSize(.small) }
+                                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Text("Your meal history syncs automatically when you open Plate, connect Health or save changes. Failed entries are retried. You can review Plate’s nutrition permissions in Apple Health.").font(.caption).foregroundStyle(.secondary)
                         HStack {
                             Button("Refresh", systemImage: "arrow.triangle.2.circlepath") { Task { await model.refreshHealth(); model.notice = "Updated from Apple Health." } }
                             Spacer()
-                            Button("Send last 30 days", systemImage: "square.and.arrow.up") {
-                                Task {
-                                    let since = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
-                                    let meals = model.store.meals.filter { $0.timestamp >= since }
-                                    var failed = 0
-                                    for meal in meals { do { try await model.health.write(meal) } catch { failed += 1 } }
-                                    model.notice = failed == 0 ? "Sent \(meals.count) meals to Apple Health." : "Sent \(meals.count - failed) of \(meals.count) meals to Apple Health."
-                                }
-                            }
+                            Button("Sync meal history", systemImage: "square.and.arrow.up") {
+                                model.scheduleNutritionSync(refresh: true)
+                            }.disabled(model.nutritionSyncing)
                         }.font(.subheadline)
                     }
                 }.padding(22).plateCard().animation(reduced ? nil : .spring(response: 0.5), value: model.healthProfile)

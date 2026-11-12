@@ -31,7 +31,8 @@ Detected-food overlays toggle item inclusion, and excluded rows are crossed out 
 - Goal adjustments are relative to maintenance: lean bulk +10%, recomp −10%, cut −20%. `NutritionCalculator.breakdown(for:)` exposes each step for the Settings card.
 - `Profile.measuredActiveKcal` (optional) replaces the activity multiplier with the 14-day average active energy from Apple Health: maintenance = resting burn + measured activity.
 - `Nutrients.caffeine` is in milligrams. Older documents without it decode as 0. A typical estimate can be explicitly accepted in the food editor. Zero or unconfirmed caffeine is not automatically guessed for Health exports.
-- Each logged food is written to Apple Health as an `HKCorrelation` of type `.food` named after the item, holding energy, macros, fiber, sugar and caffeine samples tagged with `PlateMealID`. Edits replace the meal's entries; deleting a meal removes them.
+- With Health enabled and nutrition write permissions granted, Plate automatically exports meal history on launch, foreground refresh and meal changes, including meals arriving through Firebase. Each food is an `HKCorrelation` of type `.food` containing its permitted energy, macro, fiber, sugar and caffeine samples.
+- Stable HealthKit sync identifiers and persisted versions make retries idempotent. A fingerprint-only local ledger keeps the same version after a restart. New records are saved before stale and legacy entries are removed. Local deletions and confirmed Firebase removals enter a persisted deletion queue. Settings displays completion, retry errors and nutrition types that still require permission.
 - Plate reads age, sex, height, weight, blood pressure, resting heart rate, workouts, and resting and active energy. Age, sex, height and weight fill the profile; targets follow unless they were edited by hand.
 
 

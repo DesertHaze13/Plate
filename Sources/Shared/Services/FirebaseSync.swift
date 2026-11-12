@@ -24,6 +24,7 @@ import PlateCore
     private var mealListener: ListenerRegistration?
     private var accountListeners: [ListenerRegistration] = []
     private(set) var signingIn = false
+    var onConfirmedMealRemovals: (([String]) -> Void)?
     private let store: MealStore
     init(store: MealStore) {
         self.store = store
@@ -56,9 +57,12 @@ import PlateCore
                 guard let snapshot else { return }
                 do {
                     let meals = try snapshot.documents.map { try $0.data(as: Meal.self, with: .estimate) }
+                    let removed = snapshot.metadata.isFromCache ? [] : snapshot.documentChanges
+                        .filter { $0.type == .removed }.map { $0.document.documentID }
                     let status = snapshot.metadata.hasPendingWrites ? "Waiting to upload" : snapshot.metadata.isFromCache ? "Offline · cached meals" : "Up to date"
                     Task { @MainActor [weak self] in
                         guard let self, self.userID == uid else { return }
+                        if !removed.isEmpty { self.onConfirmedMealRemovals?(removed) }
                         self.store.replaceFromCloud(meals); self.status = status; self.error = nil
                         await PhotoStore.shared.reclaimUploadedCopies(meals: meals, sync: self)
                     }
@@ -201,6 +205,7 @@ import PlateCore
     let status = "On this device"
     let userID: String? = nil
     var error: String?
+    var onConfirmedMealRemovals: (([String]) -> Void)?
     private let store: MealStore
     init(store: MealStore) { self.store = store }
     func save(_ meal: Meal) { store.save(meal) }
