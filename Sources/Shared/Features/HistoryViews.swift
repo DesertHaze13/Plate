@@ -22,7 +22,7 @@ struct HistoryView: View {
                     layout {
                         PlateCalendar(selection: $date).frame(maxWidth: wide ? 360 : .infinity)
                         VStack(alignment: .leading, spacing: 18) {
-                            HStack { Text(date, format: .dateTime.month(.wide).day()); Spacer(); Text("\(meals.count) \(meals.count == 1 ? "meal" : "meals")").foregroundStyle(.secondary) }.font(.system(.headline, design: .default))
+                            HStack { Text(date, format: .dateTime.month(.wide).day()); Spacer(); Text("\(meals.count) \(meals.count == 1 ? "meal" : "meals")").foregroundStyle(.secondary) }.font(.system(.headline, design: .rounded))
                             if meals.isEmpty { ContentUnavailableView("A quiet plate", systemImage: "calendar", description: Text("No meals were logged on this day.")).frame(maxWidth: .infinity).padding(.vertical, 30).plateCard() }
                             ForEach(meals) { meal in Button { selected = meal } label: { MealCard(meal: meal) }.buttonStyle(PlatePress()) }
                             if !meals.isEmpty { DailySummaryCard(meals: meals, target: model.store.targets) }
@@ -48,7 +48,7 @@ struct HistoryView: View {
         let gap = total - target
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(meals.isEmpty ? "—" : Int(total.rounded()).formatted()).font(.system(size: 40, weight: .bold, design: .default)).tracking(-1.5)
+                Text(meals.isEmpty ? "—" : Int(total.rounded()).formatted()).font(.system(size: 40, weight: .bold, design: .rounded)).tracking(-1.5)
                     .contentTransition(.numericText(value: total)).foregroundStyle(meals.isEmpty ? Color.secondary : tint(for: total))
                 Text(meals.isEmpty ? "No meals logged" : "kcal logged").font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
@@ -87,7 +87,7 @@ struct HistoryView: View {
                     Button { withAnimation(reduced ? nil : .smooth) { date = day } } label: {
                         VStack(spacing: 7) {
                             Text(day, format: .dateTime.weekday(.abbreviated)).font(.caption2.weight(.semibold))
-                            Text(day, format: .dateTime.day()).font(.system(.title3, design: .default, weight: .bold))
+                            Text(day, format: .dateTime.day()).font(.system(.title3, design: .rounded, weight: .bold))
                             // Bar height is the day's calories relative to the target; the tick marks the target.
                             ZStack(alignment: .bottom) {
                                 Capsule().fill(Color.primary.opacity(0.06)).frame(width: 8, height: 46)
@@ -95,7 +95,7 @@ struct HistoryView: View {
                                 Rectangle().fill(Color.primary.opacity(0.35)).frame(width: 14, height: 1.5).offset(y: -46 / 1.25)
                             }.frame(height: 46)
                             Text(logged ? (total >= 1000 ? String(format: "%.1fk", total / 1000) : "\(Int(total))") : "–")
-                                .font(.system(size: 11, weight: .bold, design: .default).monospacedDigit())
+                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
                                 .foregroundStyle(logged ? tint(for: total) : .secondary)
                         }.frame(width: 56).padding(.vertical, 12).background(active ? Color.plateAccent.opacity(0.22) : Color.plateAccent.opacity(0.05), in: .rect(cornerRadius: 20))
                     }.buttonStyle(PlatePress()).foregroundStyle(.primary)

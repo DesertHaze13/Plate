@@ -6,7 +6,7 @@ private enum Destination: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var subtitle: String { switch self { case .today: "Your energy, at a glance"; case .history: "Every meal, remembered"; case .foods: "Favourites within reach"; case .progress: "See your rhythm"; case .settings: "Make yourself at home" } }
     var tint: Color { switch self { case .today: .plateAccent; case .history: .plateCarb; case .foods: Color(red: 0.85, green: 0.42, blue: 0.48); case .progress: .plateFat; case .settings: Color(red: 0.35, green: 0.55, blue: 0.9) } }
-    var icon: String { switch self { case .today: "circle.inset.filled"; case .history: "calendar"; case .foods: "fork.knife"; case .progress: "chart.xyaxis.line"; case .settings: "slider.horizontal.3" } }
+    var icon: String { switch self { case .today: "face.smiling.inverse"; case .history: "calendar"; case .foods: "fork.knife"; case .progress: "chart.xyaxis.line"; case .settings: "slider.horizontal.3" } }
 }
 struct FoundationView: View {
     @State private var model: PlateModel
@@ -59,7 +59,7 @@ struct FoundationView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     HStack(spacing: 13) {
                         Image(systemName: "circle.inset.filled").font(.system(size: 32, weight: .medium)).foregroundStyle(Color.plateAccent).frame(width: 56, height: 56).background(Color.plateAccent.opacity(0.13), in: .rect(cornerRadius: 20))
-                        VStack(alignment: .leading, spacing: 4) { Text("PLATE").font(.system(size: 22, weight: .black, design: .default)).tracking(3); Text("Good energy, daily.").font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading, spacing: 4) { Text("PLATE").font(.system(size: 22, weight: .black, design: .rounded)).tracking(3); Text("Good energy, daily.").font(.caption).foregroundStyle(.secondary) }
                     }.padding(.top, 22)
                     SectionEyebrow(text: "YOUR DAILY SPACE")
                     VStack(spacing: 10) {
@@ -67,7 +67,7 @@ struct FoundationView: View {
                             Button { withAnimation(reducedMotion ? nil : .spring(response: 0.42, dampingFraction: 0.8)) { destination = item } } label: {
                                 HStack(spacing: 13) {
                                     PlateIconTile(symbol: item.icon, tint: item.tint)
-                                    VStack(alignment: .leading, spacing: 4) { Text(item.rawValue).font(.system(.headline, design: .default)); Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                                    VStack(alignment: .leading, spacing: 4) { Text(item.rawValue).font(.system(.headline, design: .rounded)); Text(item.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                                     Spacer(minLength: 0)
                                     if destination == item { Circle().fill(item.tint).frame(width: 5, height: 5) }
                                 }.padding(12).background {
@@ -78,7 +78,7 @@ struct FoundationView: View {
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         SectionEyebrow(text: "A LITTLE REMINDER")
-                        Text("Progress starts\nwith your next plate.").font(.system(.title3, design: .default, weight: .bold))
+                        Text("Progress starts\nwith your next plate.").font(.system(.title3, design: .rounded, weight: .bold))
                         Image(systemName: "leaf.fill").font(.title).foregroundStyle(Color.plateAccent)
                     }.padding(20).frame(maxWidth: .infinity, alignment: .leading).plateCard()
                     Label(model.sync.status, systemImage: model.sync.userID == nil ? "internaldrive" : "checkmark.icloud").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
@@ -96,7 +96,7 @@ struct FoundationView: View {
         ZStack {
             ForEach(Destination.allCases) { item in
                 NavigationStack {
-                    screen(item).toolbarBackground(.visible, for: .navigationBar)
+                    screen(item).toolbarBackground(.hidden, for: .navigationBar)
                 }
                 .environment(\.plateMotionActive, destination == item)
                 .opacity(destination == item ? 1 : 0)
@@ -176,7 +176,7 @@ struct TodayView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             dayStory.plateEntrance(2)
                             HStack {
-                                VStack(alignment: .leading, spacing: 5) { SectionEyebrow(text: "02 / THE FOOD JOURNAL"); Text("What made the day.").font(.system(.title, design: .default, weight: .bold)) }
+                                VStack(alignment: .leading, spacing: 5) { SectionEyebrow(text: "02 / THE FOOD JOURNAL"); Text("What made the day.").font(.system(.title, design: .rounded, weight: .bold)) }
                                 Spacer()
                                 Text("\(model.store.today.count)").font(.headline.monospacedDigit()).frame(width: 38, height: 38).background(Color.plateAccent.opacity(0.12), in: .circle)
                             }.padding(.top, 6)
@@ -202,7 +202,7 @@ struct TodayView: View {
             }
             Rectangle().fill(.primary).frame(height: 2)
             Text("Eat well.\nLive more.")
-                .font(.system(size: 60, weight: .bold, design: .default)).tracking(-2)
+                .font(.system(size: 60, weight: .bold, design: .rounded)).tracking(-2)
                 .lineSpacing(-3).fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("Eat well. Live more.")
             HStack(alignment: .top, spacing: 12) {
@@ -222,7 +222,7 @@ struct TodayView: View {
                     }
                 }
             }
-            Text("Your next good thing.").font(.system(.title2, design: .default, weight: .bold))
+            Text("Your next good thing.").font(.system(.title2, design: .rounded, weight: .bold))
             Text("A quick photo, a familiar favourite, or something new. Every meal is a fresh start.").font(.subheadline).foregroundStyle(.secondary)
             Button { model.showCapture = true } label: { Label("Add your first plate", systemImage: "plus").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(15).background(Color.plateAccent.opacity(0.15), in: .capsule) }.buttonStyle(PlatePress())
         }.padding(24).plateCard()
@@ -231,7 +231,7 @@ struct TodayView: View {
         Button { model.showCapture = true } label: {
             HStack(spacing: 15) {
                 Image(systemName: "viewfinder").font(.system(size: 27, weight: .light)).frame(width: 56, height: 56).background(Color.plateAccent.opacity(0.16), in: .rect(cornerRadius: 18))
-                VStack(alignment: .leading, spacing: 5) { Text("A plate worth remembering.").font(.system(.headline, design: .default)); Text("Photo · nutrition label · manual entry").font(.caption).foregroundStyle(.secondary) }
+                VStack(alignment: .leading, spacing: 5) { Text("A plate worth remembering.").font(.system(.headline, design: .rounded)); Text("Photo · nutrition label · manual entry").font(.caption).foregroundStyle(.secondary) }
                 Spacer(minLength: 0)
                 Image(systemName: "arrow.up.right").font(.headline)
             }.padding(20).plateCard()
@@ -239,11 +239,11 @@ struct TodayView: View {
     }
     private var dayStory: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack { Text("The daily read.").font(.system(.title2, design: .default, weight: .bold)); Spacer(); Image(systemName: "sun.max.fill").foregroundStyle(Color.plateCarb).symbolEffect(.bounce, value: reduceMotion ? 0 : storyMode) }
+            HStack { Text("Your daily picture").font(.system(.title2, design: .rounded, weight: .bold)); Spacer(); Image(systemName: "sun.max.fill").foregroundStyle(Color.plateCarb).symbolEffect(.bounce, value: reduceMotion ? 0 : storyMode) }
             PlateSegmentedControl(options: ["Energy", "Protein", "Balance"], selection: $storyMode)
             VStack(alignment: .leading, spacing: 14) {
-                Text(storyMode == 0 ? model.store.guidance.title : storyMode == 1 ? "Build a stronger plate." : "Every macro has a role.").font(.system(size: 27, weight: .bold, design: .default)).tracking(-0.7)
-                Text(storyMode == 0 ? "\(Int(abs(model.store.guidance.remaining))) kcal \(model.store.guidance.remaining < 0 ? "over" : "left")" : storyMode == 1 ? "\(Int(model.store.todayTotal.protein)) / \(Int(model.store.effectiveTargets.nutrients.protein)) g" : "\(Int(model.store.todayTotal.protein)) P · \(Int(model.store.todayTotal.carbs)) C · \(Int(model.store.todayTotal.fat)) F").font(.system(size: 32, weight: .bold, design: .default)).contentTransition(.numericText())
+                Text(storyMode == 0 ? model.store.guidance.title : storyMode == 1 ? "Build a stronger plate." : "Every macro has a role.").font(.system(size: 27, weight: .bold, design: .rounded)).tracking(-0.7)
+                Text(storyMode == 0 ? "\(Int(abs(model.store.guidance.remaining))) kcal \(model.store.guidance.remaining < 0 ? "over" : "left")" : storyMode == 1 ? "\(Int(model.store.todayTotal.protein)) / \(Int(model.store.effectiveTargets.nutrients.protein)) g" : "\(Int(model.store.todayTotal.protein)) P · \(Int(model.store.todayTotal.carbs)) C · \(Int(model.store.todayTotal.fat)) F").font(.system(size: 32, weight: .bold, design: .rounded)).contentTransition(.numericText())
                 Text(storyMode == 0 ? model.store.guidance.message : storyMode == 1 ? "\(Int(max(0,model.store.effectiveTargets.nutrients.protein-model.store.todayTotal.protein))) g of protein left toward today’s target. Tap a meal below to explore what’s on your plate." : "Protein and carbs provide about 4 kcal per gram; fat provides about 9. Your logged food determines this split.").font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }.id(storyMode).transition(.opacity.combined(with: .offset(y: 6)))
             if model.store.account.settings.trainingDayTargets != nil {
@@ -296,7 +296,7 @@ struct TodayView: View {
         VStack(spacing: 18) {
             if !overages.isEmpty { overTargetNotice }
             HStack {
-                SectionEyebrow(text: "01 / DAILY ENERGY")
+                SectionEyebrow(text: "YOUR DAILY ENERGY")
                 Spacer()
                 Text(overages.isEmpty ? model.store.guidance.title : "TARGET TERLEWATI").font(.caption.weight(.semibold)).foregroundStyle(model.store.guidance.state.color).padding(.horizontal, 10).padding(.vertical, 7).background(model.store.guidance.state.color.opacity(0.10), in: .capsule)
             }
@@ -309,8 +309,8 @@ struct TodayView: View {
                 NutrientTile(name: "Fat", symbol: "drop.fill", value: model.store.todayTotal.fat, target: model.store.effectiveTargets.nutrients.fat, tint: overages.contains { $0.id == "fat" } ? .red : .plateFat)
             }
         }.padding(22)
-            .background(LinearGradient(colors: overages.isEmpty ? [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)] : [Color(red: 0.28, green: 0.035, blue: 0.055), Color(red: 0.10, green: 0.025, blue: 0.035)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.13)))
+            .background(LinearGradient(colors: overages.isEmpty ? [Color(red: 0.10, green: 0.28, blue: 0.25), Color(red: 0.045, green: 0.14, blue: 0.17)] : [Color(red: 0.28, green: 0.035, blue: 0.055), Color(red: 0.10, green: 0.025, blue: 0.035)], startPoint: .topLeading, endPoint: .bottomTrailing), in: .rect(cornerRadius: 30))
+            .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(0.13)))
             .environment(\.colorScheme, .dark)
             .animation(reduceMotion ? nil : .spring(response: 0.7), value: model.store.todayTotal)
     }
@@ -342,7 +342,7 @@ struct MovementCard: View {
                     HStack(spacing: 12) {
                         PlateIconTile(symbol: workout.symbol, tint: .orange, size: 36)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(workout.name).font(.system(.headline, design: .default))
+                            Text(workout.name).font(.system(.headline, design: .rounded))
                             Text("\(workout.start.formatted(.dateTime.hour().minute())) · \(Int((workout.duration / 60).rounded())) min").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -355,7 +355,7 @@ struct MovementCard: View {
     }
     private func stat(_ title: String, _ value: Double, _ tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(Int(value.rounded()), format: .number).font(.system(.title3, design: .default, weight: .bold)).foregroundStyle(tint).contentTransition(.numericText(value: value))
+            Text(Int(value.rounded()), format: .number).font(.system(.title3, design: .rounded, weight: .bold)).foregroundStyle(tint).contentTransition(.numericText(value: value))
             Text(title).font(.caption2).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
             .animation(reduced ? nil : .spring(response: 0.7), value: value)
@@ -368,7 +368,7 @@ struct MealCard: View {
             FoodPhoto(path: meal.thumbnailPath ?? meal.photoPath).frame(width: 80, height: 100).clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 8) {
                 Text(meal.type.rawValue.uppercased()).font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(.secondary)
-                Text(meal.items.map(\.name).joined(separator: ", ")).font(.system(size: 21, weight: .semibold, design: .default)).lineLimit(3)
+                Text(meal.items.map(\.name).joined(separator: ", ")).font(.system(size: 21, weight: .semibold, design: .rounded)).lineLimit(3)
                 Text("\(meal.timestamp.formatted(.dateTime.hour().minute())) · \(Int(meal.total.protein)) g protein").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: 3) {

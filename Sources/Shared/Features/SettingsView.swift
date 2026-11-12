@@ -142,10 +142,11 @@ struct SettingsView: View {
                     Text("Firebase also manages a disk cache with a 100 MB cleanup target; it can temporarily exceed that target.").font(.caption).foregroundStyle(.secondary)
                     Button("Clear downloaded photo copies") { PhotoStore.shared.clearDownloadedCache(); model.notice = "Downloaded photo copies cleared. Pending uploads were kept safe." }
                 }.padding(22).plateCard()
+                AIAccountsCard()
                 VStack(alignment: .leading, spacing: 16) {
                     SectionEyebrow(text: "Recognition")
                     Toggle("Allow cloud fallback", isOn: $cloudAllowed).tint(Color.plateAccent)
-                    Text("When on-device analysis is unavailable or uncertain, send the compressed food photo to your Firebase Gemini service. Label OCR starts on your device.").font(.caption).foregroundStyle(.secondary)
+                    Text("Allow photos and food descriptions to be sent to your enabled AI accounts, in order, followed by the configured Gemini fallback. Printed-label OCR runs on your device. Apple Intelligence is available as a final fallback.").font(.caption).foregroundStyle(.secondary)
                     TextField("Gemini model", text: $geminiModel).textFieldStyle(.roundedBorder)
                 }.padding(22).plateCard()
                 VStack(alignment: .leading, spacing: 16) {
@@ -232,7 +233,7 @@ struct EnergyMathCard: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Daily target").font(.headline)
                 Spacer()
-                Text(Int(breakdown.calories.rounded()), format: .number).font(.system(size: 34, weight: .bold, design: .default)).contentTransition(.numericText(value: breakdown.calories))
+                Text(Int(breakdown.calories.rounded()), format: .number).font(.system(size: 34, weight: .bold, design: .rounded)).contentTransition(.numericText(value: breakdown.calories))
                 Text("kcal").font(.caption).foregroundStyle(.secondary)
             }
             Text("\(Int(macros.protein)) g protein · \(Int(macros.carbs)) g carbs · \(Int(macros.fat)) g fat").font(.caption).foregroundStyle(.secondary).contentTransition(.numericText())
@@ -266,7 +267,7 @@ struct HealthBodyGrid: View {
             ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
                 VStack(alignment: .leading, spacing: 6) {
                     Image(systemName: chip.symbol).foregroundStyle(chip.tint).symbolEffect(.bounce, value: chip.value)
-                    Text(chip.value).font(.system(.headline, design: .default)).contentTransition(.numericText())
+                    Text(chip.value).font(.system(.headline, design: .rounded)).contentTransition(.numericText())
                     Text(chip.title).font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                     .background(chip.tint.opacity(0.08), in: .rect(cornerRadius: 16))
@@ -290,3 +291,107 @@ struct TargetFields: View {
     }
 }
 #Preview { SettingsView().environment(PlateModel()) }
+
+struct AIAccountsCard: View {
+    @State private var accounts = AIRouter.accounts
+    @State private var keys: [UUID: String] = [:]
+    @State private var status: [UUID: String] = [:]
+    @State private var testing: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SectionEyebrow(text: "Your AI")
+            Text("Scan and describe food with your own AI").font(.headline)
+            Text("Add accounts in the order you want Plate to try them. Your API keys are stored in Keychain. If a service fails, Plate tries the next enabled account, then the configured fallback.").font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+                row(index, account).transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+            Menu {
+                ForEach(AIProvider.allCases) { provider in
+                    Button(provider.title, systemImage: provider.symbol) {
+                        let account = AIAccount(provider: provider)
+                        accounts.append(account)
+                        AIRouter.accounts = accounts
+                    }
+                }
+            } label: { Label("Add an AI account", systemImage: "plus.circle.fill").fontWeight(.semibold) }
+        }.padding(22).plateCard()
+            .onAppear { for account in accounts { keys[account.id] = AIKeychain.key(for: account.id) ?? "" } }
+            .animation(reduced ? nil : .spring(response: 0.45, dampingFraction: 0.8), value: accounts)
+    }
+    private func row(_ index: Int, _ account: AIAccount) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: account.provider.symbol).foregroundStyle(Color.plateAccent)
+                Text(account.provider.title).font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle("Use", isOn: binding(account.id, \.enabled)).labelsHidden().tint(Color.plateAccent)
+            }
+            TextField("Model", text: binding(account.id, \.model))
+                .textFieldStyle(.roundedBorder).autocorrectionDisabled()
+            SecureField("Paste API key", text: Binding(get: { keys[account.id] ?? "" }, set: { keys[account.id] = $0 }))
+                .textFieldStyle(.roundedBorder).autocorrectionDisabled()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { accountActions(account) }
+                VStack(alignment: .leading, spacing: 12) { accountActions(account) }
+            }
+            HStack {
+                Button("Move up", systemImage: "arrow.up") { move(index, by: -1) }.disabled(index == 0)
+                Button("Move down", systemImage: "arrow.down") { move(index, by: 1) }.disabled(index == accounts.count - 1)
+                Spacer()
+                Button("Remove", systemImage: "trash", role: .destructive) { remove(account) }
+            }.labelStyle(.iconOnly).font(.caption).buttonStyle(.bordered)
+            if let message = status[account.id] {
+                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(16).background(Color.primary.opacity(0.04), in: .rect(cornerRadius: 18))
+    }
+    @ViewBuilder private func accountActions(_ account: AIAccount) -> some View {
+        Button("Save key", systemImage: "key") { _ = saveKey(account) }
+        Button(testing == account.id ? "Testing…" : "Test", systemImage: "checkmark.seal") { test(account) }
+            .disabled(testing != nil || (keys[account.id] ?? "").isEmpty)
+        Link("Get a key", destination: account.provider.keyPage)
+    }
+    private func binding<T>(_ id: UUID, _ path: WritableKeyPath<AIAccount, T>) -> Binding<T> {
+        Binding(get: { (accounts.first { $0.id == id } ?? AIAccount(provider: .openAI))[keyPath: path] }, set: { value in
+            guard let index = accounts.firstIndex(where: { $0.id == id }) else { return }
+            accounts[index][keyPath: path] = value
+            AIRouter.accounts = accounts
+        })
+    }
+    private func move(_ index: Int, by offset: Int) {
+        accounts.swapAt(index, index + offset)
+        AIRouter.accounts = accounts
+    }
+    private func saveKey(_ account: AIAccount) -> Bool {
+        do {
+            try AIKeychain.setKey(keys[account.id] ?? "", for: account.id)
+            status[account.id] = "Key saved securely."
+            return true
+        } catch {
+            status[account.id] = error.localizedDescription
+            return false
+        }
+    }
+    private func remove(_ account: AIAccount) {
+        do {
+            try AIKeychain.setKey("", for: account.id)
+            accounts.removeAll { $0.id == account.id }
+            keys.removeValue(forKey: account.id)
+            status.removeValue(forKey: account.id)
+            AIRouter.accounts = accounts
+        } catch { status[account.id] = error.localizedDescription }
+    }
+    private func test(_ account: AIAccount) {
+        guard saveKey(account) else { return }
+        let key = keys[account.id] ?? ""
+        testing = account.id
+        Task {
+            defer { testing = nil }
+            do {
+                _ = try await AIRouter.request(account: account, key: key, prompt: "Estimate one medium banana.", image: nil)
+                status[account.id] = "Connected. Nutrition estimates are ready."
+            } catch { status[account.id] = error.localizedDescription }
+        }
+    }
+}

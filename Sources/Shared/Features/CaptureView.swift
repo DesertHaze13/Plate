@@ -132,7 +132,7 @@ struct CaptureView: View {
     private var inputOptions: some View {
         VStack(spacing: 24) {
             PlateSculpture().padding(.top, 8)
-            Text("Something delicious awaits.").font(.system(.title, design: .default, weight: .bold)).multilineTextAlignment(.center)
+            Text("Something delicious awaits.").font(.system(.title, design: .rounded, weight: .bold)).multilineTextAlignment(.center)
             Text("Snap your food, a nutrition label, or a menu. You’ll check every item before it’s logged.").foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
             #if os(iOS)
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -313,7 +313,7 @@ struct DescribeFoodSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let original { Text("Correcting: \(original.name) · \(original.servingDescription)").font(.subheadline).foregroundStyle(.secondary) }
-                    Text(original == nil ? "What did the scan miss?" : "Tell us what it really is.").font(.system(.title2, design: .default, weight: .bold))
+                    Text(original == nil ? "What did the scan miss?" : "Tell us what it really is.").font(.system(.title2, design: .rounded, weight: .bold))
                     TextField("e.g. grilled chicken, about 120 g, no sauce", text: $text, axis: .vertical)
                         .lineLimit(3...6).textFieldStyle(.roundedBorder).focused($focused).disabled(working)
                         .onChange(of: text) { _, value in
@@ -323,7 +323,7 @@ struct DescribeFoodSheet: View {
                     Text("Describe this food and the amount eaten. For missed foods, list each one; you can review them separately.").font(.caption).foregroundStyle(.secondary)
                     photoAttachment
 
-                    Text(cloudAllowed ? "Uses on-device AI when available, with your configured cloud fallback." : "Cloud fallback is off. Uses on-device AI only.").font(.caption2).foregroundStyle(.secondary)
+                    Text(cloudAllowed ? "Uses your enabled AI accounts, with Apple Intelligence as a fallback." : "Cloud recognition is off. Uses on-device AI only.").font(.caption2).foregroundStyle(.secondary)
                     if let problem { Label(problem, systemImage: "exclamationmark.circle").foregroundStyle(.orange).font(.callout) }
                     Button { run() } label: {
                         HStack { if working { ProgressView() }; Label(working ? "Estimating…" : "Estimate nutrition", systemImage: "sparkles") }.frame(maxWidth: .infinity).padding(8)
