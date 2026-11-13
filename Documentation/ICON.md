@@ -1,9 +1,14 @@
-# Plate icon
+# Plate icon: "Bite P"
 
-Open Resources/Plate.icon in Apple's Icon Composer. This editable three-layer icon is part of both app targets.
+Open `Resources/Plate.icon` in Apple's Icon Composer. It is a layered Liquid Glass icon for iOS and macOS.
 
-1. Background: a deep forest-green gradient, with a darker appearance specialization.
-2. Midground: a warm porcelain plate with a fine recessed rim. Neutral shadow creates separation from the background.
-3. Foreground: a glass macro ring, mostly mint protein with amber carbs and lilac fat; a simple green leaf anchors the center.
+- **Mark:** a bold lowercase **p** whose bowl is Plate's energy ring, with a bite taken out of its top-right. It says food, progress and Plate in one shape. The aurora gradient runs violet → pink → coral → amber, the same colours as the ring inside the app.
+- **Spark:** a white four-point spark bursts from the bite (the AI that reads your food), with two crumbs in the carb (amber) and fat (mint) colours.
 
-Icon Composer renders the default, dark, clear and tinted system appearances from these layers. Plate uses vectors rather than a flattened bitmap; change colours or proportions in Assets/*.svg, then preview all appearances in Icon Composer.
+## Layers
+
+1. **Background fill.** Light: a soft peach-to-lilac aurora. Dark: deep ube to near-black.
+2. **Bite P** (glass). Specular highlights, 20% translucency and a coloured shadow, so it reads as a glass object floating over the fill. In the clear and tinted appearances, the system turns this into frosted glass.
+3. **AI spark** (on top). A neutral shadow lifts it off the P.
+
+The layer images are `Assets/plate.png` (a porcelain plate with a bite taken out of its rim, bottom) and `Assets/macros.png` (the protein, carbs and fat ring in the plate's well, glass, top), rendered at 1024 × 1024 from `Resources/Icon Sources/plate.svg` and `macros.svg`. The statement: a plate you've already started, measured. Edit the SVGs, re-render them to PNG, and preview Default, Dark, Clear and Tinted in Icon Composer.

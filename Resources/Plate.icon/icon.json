@@ -1,81 +1,81 @@
 {
-  "fill-specializations": [
+  "fill-specializations" : [
     {
-      "value": {
-        "linear-gradient": [
-          "extended-srgb:0.18,0.25,0.86,1",
-          "extended-srgb:0.13,0.18,0.67,1"
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.83468,0.85324,0.86390,1.00000",
+          "display-p3:0.74621,0.75898,0.77886,1.00000"
         ]
       }
     },
     {
-      "appearance": "dark",
-      "value": {
-        "automatic-gradient": "extended-srgb:0.10,0.14,0.50,1"
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "extended-srgb:0.11800,0.07100,0.25100,1.00000",
+          "extended-srgb:0.03100,0.02400,0.07800,1.00000"
+        ]
       }
     }
   ],
-  "groups": [
+  "groups" : [
     {
-      "name": "Paper plate",
-      "lighting": "individual",
-      "shadow": {
-        "kind": "neutral",
-        "opacity": 0.25
-      },
-      "layers": [
+      "layers" : [
         {
-          "image-name": "plate.svg",
-          "name": "Plate rim and well",
-          "glass": false,
-          "position": {
-            "scale": 1,
-            "translation-in-points": [
+          "glass" : true,
+          "image-name" : "macros.png",
+          "name" : "Protein, carbs, fat",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
               0,
               0
             ]
           }
         }
-      ]
+      ],
+      "lighting" : "individual",
+      "name" : "Macro ring",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.35
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.15
+      }
     },
     {
-      "name": "Plate signature",
-      "lighting": "individual",
-      "specular": true,
-      "translucency": {
-        "enabled": true,
-        "value": 0.12
-      },
-      "layers": [
+      "layers" : [
         {
-          "image-name": "macros.svg",
-          "name": "Protein carbs fat",
-          "glass": true,
-          "position": {
-            "scale": 1,
-            "translation-in-points": [
-              0,
-              0
-            ]
-          }
-        },
-        {
-          "image-name": "leaf.svg",
-          "name": "Plate P mark",
-          "glass": false,
-          "position": {
-            "scale": 1,
-            "translation-in-points": [
+          "glass" : false,
+          "image-name" : "plate.png",
+          "name" : "Porcelain plate with a bite",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
               0,
               0
             ]
           }
         }
-      ]
+      ],
+      "lighting" : "individual",
+      "name" : "Bitten plate",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.4
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
     }
   ],
-  "supported-platforms": {
-    "squares": [
+  "supported-platforms" : {
+    "squares" : [
       "iOS",
       "macOS"
     ]

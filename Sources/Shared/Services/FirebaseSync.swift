@@ -18,17 +18,20 @@ import PlateCore
 @MainActor @Observable final class FirebaseSync {
     private(set) var status = "On this device"
     private(set) var userID: String?
+    /// False until we know who is signed in and whether they already have a profile, so the welcome sheet never flashes on launch.
+    private(set) var accountReady = false
     private(set) var error: String?
     let configured: Bool
     private var authHandle: AuthStateDidChangeListenerHandle?
     private var mealListener: ListenerRegistration?
     private var accountListeners: [ListenerRegistration] = []
     private(set) var signingIn = false
+    var onConfirmedMealRemovals: (([String]) -> Void)?
     private let store: MealStore
     init(store: MealStore) {
         self.store = store
         configured = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") != nil
-        guard configured else { return }
+        guard configured else { accountReady = true; return }
         if FirebaseApp.app() == nil {
             AppCheck.setAppCheckProviderFactory(PlateAppCheckFactory())
             FirebaseApp.configure()
@@ -47,6 +50,8 @@ import PlateCore
         mealListener?.remove(); mealListener = nil
         accountListeners.forEach { $0.remove() }; accountListeners = []
         userID = uid; store.load(account: uid)
+        // Signed out, or this device already knows the profile: decide now. Otherwise wait for the cloud profile.
+        accountReady = uid == nil || store.account.onboarded
         guard let uid else { status = "Sign in to sync"; return }
         status = "Connecting…"
         observeAccount(uid: uid)
@@ -56,10 +61,14 @@ import PlateCore
                 guard let snapshot else { return }
                 do {
                     let meals = try snapshot.documents.map { try $0.data(as: Meal.self, with: .estimate) }
+                    let removed = snapshot.metadata.isFromCache ? [] : snapshot.documentChanges
+                        .filter { $0.type == .removed }.map { $0.document.documentID }
                     let status = snapshot.metadata.hasPendingWrites ? "Waiting to upload" : snapshot.metadata.isFromCache ? "Offline · cached meals" : "Up to date"
                     Task { @MainActor [weak self] in
                         guard let self, self.userID == uid else { return }
+                        if !removed.isEmpty { self.onConfirmedMealRemovals?(removed) }
                         self.store.replaceFromCloud(meals); self.status = status; self.error = nil
+                        await PhotoStore.shared.reclaimUploadedCopies(meals: meals, sync: self)
                     }
                 } catch { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = "A meal could not be read: \(message)" } }
             }
@@ -68,13 +77,14 @@ import PlateCore
         let root = Firestore.firestore().collection("users").document(uid)
         func observe<T: Decodable & Sendable>(_ collection: String, as type: T.Type, apply: @escaping @MainActor (MealStore, [T]) -> Void) {
             let listener = root.collection(collection).addSnapshotListener { [weak self] snapshot, error in
-                if let error { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = message }; return }
+                if let error { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = message; if collection == "profile" { self?.accountReady = true } }; return }
                 guard let snapshot else { return }
                 do {
                     let values = try snapshot.documents.map { try $0.data(as: T.self, with: .estimate) }
                     Task { @MainActor [weak self] in
                         guard let self, self.userID == uid else { return }
                         apply(self.store, values); self.store.persistAccount()
+                        if collection == "profile" { self.accountReady = true }
                     }
                 } catch { let message = error.localizedDescription; Task { @MainActor [weak self] in self?.error = message } }
             }
@@ -113,7 +123,7 @@ import PlateCore
     }
     func photoData(path: String) async throws -> Data {
         if path.hasPrefix("firestore://") {
-            let document = try await Firestore.firestore().document(String(path.dropFirst("firestore://".count))).getDocument()
+            let document = try await Firestore.firestore().document(String(path.dropFirst("firestore://".count))).getDocument(source: .server)
             guard let bytes = document.data()?["bytes"] as? Data else { throw CocoaError(.fileNoSuchFile) }
             return bytes
         }
@@ -172,7 +182,7 @@ import PlateCore
         guard let uid = userID else { throw CocoaError(.userCancelled) }
         try await Firestore.firestore().waitForPendingWrites()
         let document = try await Firestore.firestore().collection("users").document(uid).collection("meals").document(mealID).getDocument(source: .server)
-        guard document.exists else { return ("", "") }
+        guard document.exists else { throw CocoaError(.fileNoSuchFile) }
         if !UserDefaults.standard.bool(forKey: "useFirebaseStorage") {
             guard jpeg.count <= 750 * 1024, thumbnail.count <= 100 * 1024 else { throw CocoaError(.fileWriteOutOfSpace) }
             let root = Firestore.firestore().collection("users").document(uid).collection("photos")
@@ -199,7 +209,9 @@ import PlateCore
     let configured = false
     let status = "On this device"
     let userID: String? = nil
+    let accountReady = true
     var error: String?
+    var onConfirmedMealRemovals: (([String]) -> Void)?
     private let store: MealStore
     init(store: MealStore) { self.store = store }
     func save(_ meal: Meal) { store.save(meal) }
